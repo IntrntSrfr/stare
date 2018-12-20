@@ -2,7 +2,7 @@
 ### Made for single server use as of now.
 
 Tutorial: 
-1. Create config.json file from config-template.json template
+1. Create `config.json` file from `config-template.json` template
 2. Run `go build -o logger.exe` inside this folder
 3. Run `logger.exe`
 4. Congratulations you did it
