@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -55,6 +56,7 @@ func main() {
 	file, e := ioutil.ReadFile("./config.json")
 	if e != nil {
 		fmt.Printf("Config file not found.")
+		bufio.NewReader(os.Stdin).ReadBytes('\n')
 		return
 	}
 
