@@ -163,8 +163,6 @@ func MemberLeaveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
 			gamer = append(gamer, fmt.Sprintf("<@&%v>", r))
 		}
 
-		fmt.Println(gamer)
-
 		embed := discordgo.MessageEmbed{
 			Color: dColorOrange,
 			Title: "User left or kicked",
