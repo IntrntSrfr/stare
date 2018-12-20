@@ -247,6 +247,9 @@ func MemberBannedHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 
 	paste := simplepaste.NewPaste(fmt.Sprintf("24h ban log for %v (%v) - %v", m.User.String(), m.User.ID, ts.Format(time.RFC1123)), text)
 
+	paste.ExpireDate = simplepaste.Never
+	paste.Privacy = simplepaste.Unlisted
+
 	link, err := api.SendPaste(paste)
 	if err != nil {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
@@ -411,6 +414,9 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 	}
 
 	paste := simplepaste.NewPaste(fmt.Sprintf("%v - %v", m.ChannelID, ts.Format(time.RFC1123)), text)
+
+	paste.ExpireDate = simplepaste.Never
+	paste.Privacy = simplepaste.Unlisted
 
 	link, err := api.SendPaste(paste)
 	if err != nil {
