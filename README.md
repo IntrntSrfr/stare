@@ -1,13 +1,11 @@
 # Discord logger for some events
 ### Made for single server use as of now.
 
-Steps: 
+Tutorial: 
 1. Create config.json file from config-template.json template
-2. run `go build -o logger.exe` inside this folder
-3. third
-
-Create a config.json file
-
+2. Run `go build -o logger.exe` inside this folder
+3. Run `logger.exe`
+4. Congratulations you did it
 
 | Key           | Value                                |
 | ------------- |--------------------------------------|
