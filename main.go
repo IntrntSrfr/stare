@@ -10,10 +10,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/dgraph-io/badger/options"
+
+	"github.com/dgraph-io/badger"
 
 	"github.com/ninedraft/simplepaste"
 
@@ -33,15 +38,15 @@ type Config struct {
 }
 
 type discMessage struct {
-	message    *discordgo.Message
-	attachment []byte
+	Message    *discordgo.Message
+	Attachment [][]byte
 }
 
 var (
-	config       Config
-	messageCache = make(map[string]*discMessage)
-	memberCache  = make(map[string]*discordgo.Member)
-	api          *simplepaste.API
+	config Config
+	api    *simplepaste.API
+	memDB  *badger.DB
+	msgDB  *badger.DB
 )
 
 const (
@@ -62,6 +67,39 @@ func main() {
 
 	json.Unmarshal(file, &config)
 
+	msgPath, _ := filepath.Abs("../functional-logger/tmp/msg")
+	memPath, _ := filepath.Abs("../functional-logger/tmp/mem")
+
+	opts := badger.DefaultOptions
+	opts.Dir = msgPath
+	opts.ValueDir = msgPath
+	opts.ValueLogLoadingMode = options.FileIO
+	opts.ReadOnly = false
+
+	db, err := badger.Open(opts)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer db.Close()
+
+	msgDB = db
+
+	opts = badger.DefaultOptions
+	opts.Dir = memPath
+	opts.ValueDir = memPath
+	opts.ValueLogLoadingMode = options.FileIO
+	opts.ReadOnly = false
+
+	db, err = badger.Open(opts)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer db.Close()
+
+	memDB = db
+
 	token := config.Token
 
 	client, err := discordgo.New("Bot " + token)
@@ -72,6 +110,7 @@ func main() {
 	}
 
 	api = simplepaste.NewAPI(config.PBToken)
+	removeOldMessages()
 
 	addHandlers(client)
 
@@ -112,7 +151,7 @@ func addHandlers(s *discordgo.Session) {
 
 	if config.MsgDelete != "" {
 		go s.AddHandler(MessageDeleteHandler)
-		go s.AddHandler(MessageDeleteBulkHandler)
+		//go s.AddHandler(MessageDeleteBulkHandler)
 	}
 
 	go s.AddHandler(MessageCreateHandler)
@@ -122,18 +161,11 @@ func addHandlers(s *discordgo.Session) {
 
 func GuildAvailableHandler(s *discordgo.Session, g *discordgo.GuildCreate) {
 	for _, mem := range g.Members {
-		memberCache[g.ID+mem.User.ID] = mem
+		setMember(mem)
 	}
 }
 func GuildMemberUpdateHandler(s *discordgo.Session, m *discordgo.GuildMemberUpdate) {
-	if _, ok := memberCache[m.GuildID+m.User.ID]; ok {
-		memberCache[m.GuildID+m.User.ID] = m.Member
-	}
-}
-func GuildUnavailableHandler(s *discordgo.Session, g *discordgo.GuildDelete) {
-	for _, mem := range g.Members {
-		memberCache[g.ID+mem.User.ID] = mem
-	}
+	setMember(m.Member)
 }
 
 func MemberJoinedHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
@@ -143,8 +175,8 @@ func MemberJoinedHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	if _, ok := memberCache[m.GuildID+m.User.ID]; !ok {
-		memberCache[m.GuildID+m.User.ID] = m.Member
+	if _, err := getMember(m.GuildID + m.User.ID); err != nil {
+		setMember(m.Member)
 	}
 
 	id, err := strconv.ParseInt(m.User.ID, 0, 63)
@@ -155,7 +187,7 @@ func MemberJoinedHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 	id = ((id >> 22) + 1420070400000) / 1000
 
 	dur := time.Since(time.Unix(int64(id), 0))
-
+	
 	ts := time.Unix(id, 0)
 
 	embed := discordgo.MessageEmbed{
@@ -190,7 +222,7 @@ func MemberLeaveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
 
 	gamer := []string{}
 
-	if mem, ok := memberCache[m.GuildID+m.User.ID]; ok {
+	if mem, err := getMember(m.GuildID + m.User.ID); err == nil {
 
 		g, err := s.State.Guild(m.GuildID)
 		if err != nil {
@@ -248,7 +280,9 @@ func MemberLeaveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
 			fmt.Println("LEAVE LOG ERROR", err)
 		}
 
-		delete(memberCache, m.GuildID+m.User.ID)
+		txn := memDB.NewTransaction(true)
+		defer txn.Discard()
+		txn.Delete([]byte(m.GuildID + m.User.ID))
 	}
 }
 
@@ -284,23 +318,50 @@ func MemberBannedHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 		},
 	}
 
-	if _, ok := memberCache[m.GuildID+m.User.ID]; ok {
+	if _, err := getMember(m.GuildID + m.User.ID); err == nil {
 
 		text := ""
 		msgCount := 0
 
-		for _, mc := range messageCache {
-			if mc.message.Author.ID == m.User.ID {
+		txn := msgDB.NewTransaction(false)
+		defer txn.Discard()
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
 
-				ch, err := s.State.Channel(mc.message.ChannelID)
+		messageCache := []*discMessage{}
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			err := item.Value(func(v []byte) error {
+				dmsg := &discMessage{}
+				err := json.Unmarshal(v, &dmsg)
+				if err != nil {
+					return err
+				}
+
+				if dmsg.Message.Author.ID == m.User.ID {
+					messageCache = append(messageCache, dmsg)
+				}
+
+				return nil
+			})
+			if err != nil {
+				continue
+			}
+		}
+
+		for _, mc := range messageCache {
+			if mc.Message.Author.ID == m.User.ID {
+
+				ch, err := s.State.Channel(mc.Message.ChannelID)
 				if err != nil {
 					continue
 				}
 
-				if len(mc.attachment) > 0 {
-					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\nMessage had attachment\n", mc.message.Author.String(), mc.message.Author.ID, ch.Name, ch.ID, mc.message.Content)
+				if len(mc.Attachment) > 0 {
+					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\nMessage had attachment\n", mc.Message.Author.String(), mc.Message.Author.ID, ch.Name, ch.ID, mc.Message.Content)
 				} else {
-					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", mc.message.Author.String(), mc.message.Author.ID, ch.Name, ch.ID, mc.message.Content)
+					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", mc.Message.Author.String(), mc.Message.Author.ID, ch.Name, ch.ID, mc.Message.Content)
 				}
 				msgCount++
 			}
@@ -379,121 +440,127 @@ func MemberUnbannedHandler(s *discordgo.Session, m *discordgo.GuildBanRemove) {
 
 func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 
-	if oldm, ok := messageCache[m.ID]; ok {
+	oldm, err := getMessage(m.ID)
+	if err != nil {
+		return
+	}
 
-		g, err := s.State.Guild(m.GuildID)
-		if err != nil {
-			return
-		}
+	g, err := s.State.Guild(m.GuildID)
+	if err != nil {
+		return
+	}
 
-		oldmsg := oldm.message
+	oldmsg := oldm.Message
 
-		if oldmsg.Content == m.Content {
-			return
-		}
+	if oldmsg.Content == m.Content {
+		return
+	}
 
-		embed := discordgo.MessageEmbed{
-			Color: dColorLBlue,
-			Title: "Message edited",
-			Fields: []*discordgo.MessageEmbedField{
-				&discordgo.MessageEmbedField{
-					Name:   "User",
-					Value:  fmt.Sprintf("%v\n%v\n%v", oldmsg.Author.Mention(), oldmsg.Author.String(), oldmsg.Author.ID),
-					Inline: true,
-				},
-				&discordgo.MessageEmbedField{
-					Name:   "Message ID",
-					Value:  m.ID,
-					Inline: true,
-				},
-				&discordgo.MessageEmbedField{
-					Name:  "Channel",
-					Value: fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID),
-				},
-				&discordgo.MessageEmbedField{
-					Name:  "Old content",
-					Value: oldmsg.Content,
-				},
-				&discordgo.MessageEmbedField{
-					Name:  "New content",
-					Value: m.Content,
-				},
+	embed := discordgo.MessageEmbed{
+		Color: dColorLBlue,
+		Title: "Message edited",
+		Fields: []*discordgo.MessageEmbedField{
+			&discordgo.MessageEmbedField{
+				Name:   "User",
+				Value:  fmt.Sprintf("%v\n%v\n%v", oldmsg.Author.Mention(), oldmsg.Author.String(), oldmsg.Author.ID),
+				Inline: true,
 			},
-			Timestamp: time.Now().Format(time.RFC3339),
-			Footer: &discordgo.MessageEmbedFooter{
-				IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
-				Text:    g.Name,
+			&discordgo.MessageEmbedField{
+				Name:   "Message ID",
+				Value:  m.ID,
+				Inline: true,
 			},
-		}
-		_, err = s.ChannelMessageSendEmbed(config.MsgEdit, &embed)
-		if err != nil {
-			fmt.Println("EDIT LOG ERROR", err)
-		}
+			&discordgo.MessageEmbedField{
+				Name:  "Channel",
+				Value: fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID),
+			},
+			&discordgo.MessageEmbedField{
+				Name:  "Old content",
+				Value: oldmsg.Content,
+			},
+			&discordgo.MessageEmbedField{
+				Name:  "New content",
+				Value: m.Content,
+			},
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+		Footer: &discordgo.MessageEmbedFooter{
+			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
+			Text:    g.Name,
+		},
+	}
+	_, err = s.ChannelMessageSendEmbed(config.MsgEdit, &embed)
+	if err != nil {
+		fmt.Println("EDIT LOG ERROR", err)
 	}
 }
 
 func MessageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDelete) {
 
-	if msg, ok := messageCache[m.ID]; ok {
-		g, err := s.State.Guild(m.GuildID)
-		if err != nil {
-			return
-		}
+	msg, err := getMessage(m.ID)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
-		msgo := msg.message
+	g, err := s.State.Guild(m.GuildID)
+	if err != nil {
+		return
+	}
 
-		embed := discordgo.MessageEmbed{
-			Color: dColorWhite,
-			Title: "Message deleted",
-			Fields: []*discordgo.MessageEmbedField{
-				&discordgo.MessageEmbedField{
-					Name:   "User",
-					Value:  fmt.Sprintf("%v\n%v\n%v", msgo.Author.Mention(), msgo.Author.String(), msgo.Author.ID),
-					Inline: true,
-				},
-				&discordgo.MessageEmbedField{
-					Name:   "Message ID",
-					Value:  m.ID,
-					Inline: true,
-				},
-				&discordgo.MessageEmbedField{
-					Name:  "Channel",
-					Value: fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID),
-				},
+	msgo := msg.Message
+
+	embed := discordgo.MessageEmbed{
+		Color: dColorWhite,
+		Title: "Message deleted",
+		Fields: []*discordgo.MessageEmbedField{
+			&discordgo.MessageEmbedField{
+				Name:   "User",
+				Value:  fmt.Sprintf("%v\n%v\n%v", msgo.Author.Mention(), msgo.Author.String(), msgo.Author.ID),
+				Inline: true,
 			},
-			Timestamp: time.Now().Format(time.RFC3339),
-			Footer: &discordgo.MessageEmbedFooter{
-				IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
-				Text:    g.Name,
+			&discordgo.MessageEmbedField{
+				Name:   "Message ID",
+				Value:  m.ID,
+				Inline: true,
 			},
-		}
+			&discordgo.MessageEmbedField{
+				Name:  "Channel",
+				Value: fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID),
+			},
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+		Footer: &discordgo.MessageEmbedFooter{
+			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
+			Text:    g.Name,
+		},
+	}
 
-		if msgo.Content != "" {
-			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-				Name:  "Content",
-				Value: msgo.Content,
-			})
-		} else {
-			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-				Name:  "Content",
-				Value: "No content",
-			})
-		}
-		if len(msgo.Attachments) > 0 {
-			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-				Name:  "Total attachments",
-				Value: fmt.Sprint(len(msgo.Attachments)),
-			})
-		}
+	if msgo.Content != "" {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Content",
+			Value: msgo.Content,
+		})
+	} else {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Content",
+			Value: "No content",
+		})
+	}
+	if len(msgo.Attachments) > 0 {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Total attachments",
+			Value: fmt.Sprint(len(msgo.Attachments)),
+		})
+	}
 
-		_, err = s.ChannelMessageSendEmbed(config.MsgDelete, &embed)
-		if err != nil {
-			fmt.Println("DELETE LOG ERROR", err)
-		}
-		if len(msgo.Attachments) > 0 {
-			//ext := strings.Split()
-			s.ChannelFileSendWithMessage(config.MsgDelete, fmt.Sprintf("File attached to message ID: %v", m.ID), msgo.Attachments[0].Filename, bytes.NewReader(msg.attachment))
-		}
+	_, err = s.ChannelMessageSendEmbed(config.MsgDelete, &embed)
+	if err != nil {
+		fmt.Println("DELETE LOG ERROR", err)
+	}
+
+	for k := range msgo.Attachments {
+		s.ChannelFileSendWithMessage(config.MsgDelete, fmt.Sprintf("File attached to message ID: %v", m.ID), msgo.Attachments[k].Filename, bytes.NewReader(msg.Attachment[k]))
 	}
 }
 
@@ -523,16 +590,27 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 		},
 	}
 
+	messageCache := []*discMessage{}
+
+	for _, val := range m.Messages {
+		dmsg, err := getMessage(val)
+		if err != nil {
+			continue
+		}
+
+		messageCache = append(messageCache, dmsg)
+	}
+
 	text := ""
 
-	for _, mc := range m.Messages {
-		if msg, ok := messageCache[mc]; ok {
-			if len(msg.attachment) > 0 {
-				text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.message.Author.String(), msg.message.Author.ID, msg.message.Content)
-			} else {
-				text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.message.Author.String(), msg.message.Author.ID, msg.message.Content)
-			}
+	for _, msg := range messageCache {
+
+		if len(msg.Message.Attachments) > 0 {
+			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+		} else {
+			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
 		}
+
 	}
 
 	paste := simplepaste.NewPaste(fmt.Sprintf("%v - %v", m.ChannelID, ts.Format(time.RFC1123)), text)
@@ -561,6 +639,8 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 
 func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
+	var err error
+
 	if m.Author.Bot {
 		return
 	}
@@ -581,52 +661,192 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	err = setMessage(m.Message)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	fmt.Println(fmt.Sprintf("%v - %v - %v: %v", g.Name, ch.Name, m.Author.String(), m.Content))
-
-	dmsg := &discMessage{
-		message:    m.Message,
-		attachment: []byte{},
-	}
-
-	if len(m.Attachments) > 0 {
-
-		res, _ := http.Get(m.Attachments[0].URL)
-		if err != nil {
-			return
-		}
-
-		d, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			return
-		}
-
-		dmsg.attachment = d
-	}
-
-	messageCache[m.ID] = dmsg
-
-	if m.Content == "fl.len" {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprint(len(messageCache)))
-	} else if m.Content == "fl.mlen" {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprint(len(memberCache)))
-	} else if m.Author.ID == config.OwnerID {
-		if m.Content == "fl.clear" {
-			messageCache = map[string]*discMessage{}
-		}
-	}
-
-	go func() {
-		cleartime := time.After(24 * time.Hour)
-
-		select {
-		case <-cleartime:
-			delete(messageCache, m.ID)
-		}
-	}()
 }
+
 func ReadyHandler(s *discordgo.Session, r *discordgo.Ready) {
 	fmt.Println(fmt.Sprintf("Logged in as %v.", r.User.String()))
 }
 func DisconnectHandler(s *discordgo.Session, d *discordgo.Disconnect) {
 	fmt.Println("DISCONNECTED AT ", time.Now().Format(time.RFC1123))
+}
+
+func setMessage(m *discordgo.Message) error {
+	err := msgDB.Update(func(txn *badger.Txn) error {
+		dmsg := &discMessage{
+			Message:    m,
+			Attachment: [][]byte{},
+		}
+
+		for _, val := range m.Attachments {
+			res, err := http.Get(val.URL)
+			if err != nil {
+				return err
+			}
+
+			d, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				return err
+			}
+
+			dmsg.Attachment = append(dmsg.Attachment, d)
+		}
+
+		b, err := json.Marshal(dmsg)
+		if err != nil {
+			return err
+		}
+
+		err = txn.Set([]byte(m.ID), b)
+
+		return err
+	})
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+
+	go func() {
+		timer := time.After(24 * time.Hour)
+
+		select {
+		case <-timer:
+			txn := msgDB.NewTransaction(true)
+			defer txn.Discard()
+			err := txn.Delete([]byte(m.ID))
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}()
+	return nil
+}
+
+func getMessage(ID string) (*discMessage, error) {
+	var (
+		err     error
+		valCopy []byte
+	)
+	err = msgDB.View(func(txn *badger.Txn) error {
+
+		item, err := txn.Get([]byte(ID))
+		if err != nil {
+			return err
+		}
+
+		err = item.Value(func(val []byte) error {
+			valCopy = append([]byte{}, val...)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	msg := discMessage{}
+	err = json.Unmarshal(valCopy, &msg)
+
+	return &msg, err
+}
+
+func setMember(m *discordgo.Member) error {
+	err := memDB.Update(func(txn *badger.Txn) error {
+		b, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+
+		err = txn.Set([]byte(m.GuildID+m.User.ID), b)
+		return err
+	})
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	return nil
+}
+
+func getMember(ID string) (*discordgo.Member, error) {
+	var (
+		err     error
+		valCopy []byte
+	)
+	err = memDB.View(func(txn *badger.Txn) error {
+
+		item, err := txn.Get([]byte(ID))
+		if err != nil {
+			return err
+		}
+
+		err = item.Value(func(val []byte) error {
+			valCopy = append([]byte{}, val...)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	msg := discordgo.Member{}
+	err = json.Unmarshal(valCopy, &msg)
+
+	return &msg, err
+}
+
+func removeOldMessages() {
+	msgDB.Update(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			k := it.Item().KeyCopy(nil)
+			err := item.Value(func(v []byte) error {
+				dmsg := &discMessage{}
+				err := json.Unmarshal(v, &dmsg)
+				if err != nil {
+					return err
+				}
+
+				id, err := strconv.ParseInt(dmsg.Message.ID, 0, 63)
+				if err != nil {
+					return err
+				}
+
+				id = ((id >> 22) + 1420070400000) / 1000
+				dur := time.Since(time.Unix(int64(id), 0))
+
+				if dur > time.Hour*24 {
+					err := txn.Delete(k)
+					if err != nil {
+						fmt.Println(err)
+					} else {
+						fmt.Println("Deleted", string(k))
+					}
+				}
+
+				return nil
+			})
+			if err != nil {
+				continue
+			}
+		}
+		return nil
+	})
 }

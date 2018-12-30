@@ -2,3 +2,5 @@ config.json
 config2.json
 logger.exe
 functional-logger.zip
+.idea
+/tmp
