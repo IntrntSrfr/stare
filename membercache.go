@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
@@ -18,7 +19,7 @@ func NewMemCache() *MemberCache {
 }
 func (m *MemberCache) Put(mem *discordgo.Member) {
 	m.Lock()
-	m.storage[mem.GuildID+mem.User.ID] = mem
+	m.storage[fmt.Sprint("%v:%v", mem.GuildID, mem.User.ID)] = mem
 	m.Unlock()
 }
 func (m *MemberCache) Get(key string) (mem *discordgo.Member, ok bool) {
