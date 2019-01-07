@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"database/sql"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -288,48 +289,139 @@ func GuildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemo
 	}
 }
 
-func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) { /*
-		row := db.QueryRow("SELECT banlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.BanLog)
+func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
+	row := db.QueryRow("SELECT banlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
+	dg := DiscordGuild{}
+	err := row.Scan(&dg.BanLog)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	if dg.BanLog == "" {
+		return
+	}
+	g, err := s.State.Guild(m.GuildID)
+	if err != nil {
+		return
+	}
+
+	ts := time.Now()
+
+	embed := discordgo.MessageEmbed{
+		Color: dColorRed,
+		Title: "User banned",
+		Thumbnail: &discordgo.MessageEmbedThumbnail{
+			URL: m.User.AvatarURL("256"),
+		},
+		Fields: []*discordgo.MessageEmbedField{
+			&discordgo.MessageEmbedField{
+				Name:  "User",
+				Value: fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()),
+			},
+			&discordgo.MessageEmbedField{
+				Name:  "ID",
+				Value: m.User.ID,
+			},
+		},
+		Timestamp: ts.Format(time.RFC3339),
+		Footer: &discordgo.MessageEmbedFooter{
+			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
+			Text:    g.Name,
+		},
+	}
+
+	_, err = GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
+	if err == nil {
+
+		current := time.Now().Unix()
+		fmt.Println(current)
+
+		jeff := current - int64((time.Hour * 24).Seconds())
+		fmt.Println(strconv.FormatInt(jeff, 10))
+
+		messagelog := []*DMsg{}
+
+		err = msgDB.View(func(txn *badger.Txn) error {
+			it := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer it.Close()
+
+			prefix := []byte(fmt.Sprintf("%v:%v:", m.GuildID, m.User.ID))
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+
+				body, err := item.ValueCopy(nil)
+				dec := gob.NewDecoder(bytes.NewReader(body))
+				msg := &DMsg{}
+				dec.Decode(msg)
+				msgts, err := strconv.ParseInt(msg.Message.ID, 10, 0)
+				if err != nil {
+					continue
+				}
+
+				unixmsgts := ((msgts >> 22) + 1420070400000) / 1000
+
+				dayAgo := ts.Unix() - int64((time.Hour * 24).Seconds())
+				if dayAgo > unixmsgts {
+					messagelog = append(messagelog, msg)
+				}
+			}
+			return nil
+		})
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		if dg.BanLog == "" {
-			return
-		}
-		g, err := s.State.Guild(m.GuildID)
-		if err != nil {
-			return
+
+		text := ""
+		msgCount := 0
+
+		sort.Sort(ByID(messagelog))
+
+		for _, cmsg := range messagelog {
+			if cmsg.Message.Author.ID == m.User.ID {
+
+				ch, err := s.State.Channel(cmsg.Message.ChannelID)
+				if err != nil {
+					continue
+				}
+
+				if len(cmsg.Attachments) > 0 {
+					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\nMessage had attachment\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content)
+				} else {
+					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content)
+				}
+				msgCount++
+			}
 		}
 
-		ts := time.Now()
+		if msgCount > 0 {
 
-		embed := discordgo.MessageEmbed{
-			Color: dColorRed,
-			Title: "User banned",
-			Thumbnail: &discordgo.MessageEmbedThumbnail{
-				URL: m.User.AvatarURL("256"),
-			},
-			Fields: []*discordgo.MessageEmbedField{
-				&discordgo.MessageEmbedField{
-					Name:  "User",
-					Value: fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()),
-				},
-				&discordgo.MessageEmbedField{
-					Name:  "ID",
-					Value: m.User.ID,
-				},
-			},
-			Timestamp: ts.Format(time.RFC3339),
-			Footer: &discordgo.MessageEmbedFooter{
-				IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
-				Text:    g.Name,
-			},
+			link, err := OWOC.Upload(text)
+			if err != nil {
+				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+					Name:  "24h user log",
+					Value: "Error getting link",
+				})
+			} else {
+				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+					Name:  "24h user log",
+					Value: link,
+				})
+			}
+		} else {
+			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+				Name:  "24h user log",
+				Value: "No history.",
+			})
 		}
-	*/
+	} else {
+		embed.Title += " - Hackban"
+	}
 
+	_, err = s.ChannelMessageSendEmbed(config.Ban, &embed)
+	if err != nil {
+		fmt.Println("BAN LOG ERROR", err)
+	}
 }
 
 func GuildBanRemoveHandler(s *discordgo.Session, m *discordgo.GuildBanRemove) {
@@ -654,6 +746,62 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	args := strings.Split(m.Content, " ")
+	if args[0] == "fl.set" {
+		if len(args) < 2 {
+			return
+		}
+		channel := ch
+		chstr := ""
+		if len(args) > 2 {
+			if strings.HasPrefix(args[2], "<#") && strings.HasSuffix(args[2], ">") {
+				chstr = args[2]
+				chstr = chstr[2 : len(chstr)-1]
+			} else {
+				chstr = args[2]
+			}
+			channel, err = s.State.Channel(chstr)
+		}
+		switch strings.ToLower(args[1]) {
+		case "join":
+			db.Exec("UPDATE discordguilds SET joinlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set join logs to %v.", channel.Mention()))
+		case "leave":
+			db.Exec("UPDATE discordguilds SET leavelog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set leave logs to %v.", channel.Mention()))
+		case "msgdelete":
+			db.Exec("UPDATE discordguilds SET msgdeletelog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set message delete logs to %v.", channel.Mention()))
+		case "msgedit":
+			db.Exec("UPDATE discordguilds SET msgeditlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set message edit logs to %v.", channel.Mention()))
+		case "ban":
+			db.Exec("UPDATE discordguilds SET banlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set ban logs to %v.", channel.Mention()))
+		case "unban":
+			db.Exec("UPDATE discordguilds SET unbanlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set unban logs to %v.", channel.Mention()))
+
+		default:
+			s.ChannelMessageSend(ch.ID, "no")
+		}
+	} else if args[0] == "fl.help" {
+
+		text := "To set a log channel, do `fl.set <logtype> <channel>`, where channel is optional.\n"
+		text += "Logtypes:\n"
+		text += "Join - When a user joins the server\n"
+		text += "Leave - When a user leaves the server\n"
+		text += "Msgdelete - When a message is deleted\n"
+		text += "Msgedit - When a message is edited\n"
+		text += "Ban - When a user got banned\n"
+		text += "Unban - When a user got unbanned\n"
+		text += "\n"
+		text += "Example - fl.set join\n"
+		text += "Example - fl.set join #join-logs\n"
+		text += "Example - fl.set join 1234123412341234\n"
+
+		s.ChannelMessageSend(ch.ID, text)
+	}
 }
 
 func ReadyHandler(s *discordgo.Session, r *discordgo.Ready) {
