@@ -11,12 +11,14 @@ import (
 )
 
 type OWOClient struct {
-	Token string
+	token  string
+	client *http.Client
 }
 
-func NewOWOClient(token string) *OWOClient {
+func NewOWOClient(tkn string) *OWOClient {
 	return &OWOClient{
-		Token: token,
+		token:  tkn,
+		client: &http.Client{},
 	}
 }
 
@@ -26,7 +28,7 @@ func (o *OWOClient) Upload(text string) (string, error) {
 
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Disposition", `form-data; name="files[]" filename="text.txt"`)
-	h.Set("Content-Type", "text/plain")
+	h.Set("Content-Type", "text/plain;charset=utf-8")
 
 	part, err := writer.CreatePart(h)
 	if err != nil {
@@ -48,10 +50,9 @@ func (o *OWOClient) Upload(text string) (string, error) {
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", o.Token)
+	req.Header.Set("Authorization", o.token)
 
-	cl := http.Client{}
-	res, err := cl.Do(req)
+	res, err := o.client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +66,7 @@ func (o *OWOClient) Upload(text string) (string, error) {
 	json.Unmarshal(resbody, &jeff)
 
 	if len(jeff.Files) > 0 {
-		return "https://owo.whats-th.is/" + jeff.Files[0].URL, nil
+		return "https://chito.ge/" + jeff.Files[0].URL, nil
 	}
 	return "", nil
 }

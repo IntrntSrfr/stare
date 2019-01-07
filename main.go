@@ -653,6 +653,7 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		fmt.Println("MESSAGE CREATE ERROR", err)
 		return
 	}
+
 }
 
 func ReadyHandler(s *discordgo.Session, r *discordgo.Ready) {
