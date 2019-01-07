@@ -10,7 +10,7 @@ import (
 	"github.com/dgraph-io/badger"
 )
 
-func NewMemeberDB() (*badger.DB, error) {
+func NewMemberDB() (*badger.DB, error) {
 
 	os.MkdirAll("./tmp/mem", 0750)
 
@@ -74,7 +74,10 @@ func DeleteMember(key string) error {
 	err := memDB.Update(func(txn *badger.Txn) error {
 		err := txn.Delete([]byte(key))
 		if err != nil {
+			fmt.Println(err)
 			return err
+		} else {
+			fmt.Println("deleted", key)
 		}
 		return nil
 	})

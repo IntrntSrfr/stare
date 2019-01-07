@@ -43,7 +43,7 @@ const (
 func main() {
 	file, e := ioutil.ReadFile("./config.json")
 	if e != nil {
-		fmt.Printf("Config file not found.")
+		fmt.Printf("Config file not found.\nPlease press enter.")
 		bufio.NewReader(os.Stdin).ReadBytes('\n')
 		return
 	}
@@ -56,7 +56,7 @@ func main() {
 		return
 	}
 	defer msgDB.Close()
-	memDB, err = NewMemeberDB()
+	memDB, err = NewMemberDB()
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -331,39 +331,68 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 	}
 
 	_, err = GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
-	if err == nil {
+	if err != nil {
+		/*
+			d, _ := json.MarshalIndent(cmem, "", "\t")
+			fmt.Println(string(d))
+		*/
+		embed.Title += " - Hackban"
+	} else {
+		/*
+			d, _ := json.MarshalIndent(cmem, "", "\t")
+			fmt.Println(string(d))
+			current := time.Now().Unix()
+				fmt.Println(current)
 
-		current := time.Now().Unix()
-		fmt.Println(current)
-
-		jeff := current - int64((time.Hour * 24).Seconds())
-		fmt.Println(strconv.FormatInt(jeff, 10))
-
+				jeff := current - int64((time.Hour * 24).Seconds())
+				fmt.Println(strconv.FormatInt(jeff, 10))
+		*/
 		messagelog := []*DMsg{}
 
 		err = msgDB.View(func(txn *badger.Txn) error {
 			it := txn.NewIterator(badger.DefaultIteratorOptions)
 			defer it.Close()
 
-			prefix := []byte(fmt.Sprintf("%v:%v:", m.GuildID, m.User.ID))
+			prefix := []byte(fmt.Sprintf("%v:", m.GuildID))
 			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 				item := it.Item()
 
 				body, err := item.ValueCopy(nil)
-				dec := gob.NewDecoder(bytes.NewReader(body))
-				msg := &DMsg{}
-				dec.Decode(msg)
-				msgts, err := strconv.ParseInt(msg.Message.ID, 10, 0)
 				if err != nil {
 					continue
 				}
-
-				unixmsgts := ((msgts >> 22) + 1420070400000) / 1000
-
-				dayAgo := ts.Unix() - int64((time.Hour * 24).Seconds())
-				if dayAgo > unixmsgts {
-					messagelog = append(messagelog, msg)
+				dec := gob.NewDecoder(bytes.NewReader(body))
+				msg := &DMsg{}
+				err = dec.Decode(msg)
+				if err != nil {
+					continue
 				}
+				/*
+					d, _ := json.MarshalIndent(msg, "", "\t")
+					fmt.Println(string(d))
+				*/
+				if msg.Message.Author.ID == m.User.ID {
+
+					msgid, err := strconv.ParseInt(msg.Message.ID, 10, 0)
+					if err != nil {
+						continue
+					}
+					msgts := ((msgid >> 22) + 1420070400000) / 1000
+
+					dayAgo := ts.Unix() - int64((time.Hour * 24).Seconds())
+
+					if msgts > dayAgo {
+						messagelog = append(messagelog, msg)
+					}
+				}
+
+				/*
+
+					unixmsgts := ((msgts >> 22) + 1420070400000) / 1000
+
+					if dayAgo > unixmsgts {
+						messagelog = append(messagelog, msg)
+					} */
 			}
 			return nil
 		})
@@ -373,7 +402,6 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 		}
 
 		text := ""
-		msgCount := 0
 
 		sort.Sort(ByID(messagelog))
 
@@ -390,11 +418,10 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 				} else {
 					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content)
 				}
-				msgCount++
 			}
 		}
 
-		if msgCount > 0 {
+		if len(messagelog) > 0 {
 
 			link, err := OWOC.Upload(text)
 			if err != nil {
@@ -414,11 +441,9 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 				Value: "No history.",
 			})
 		}
-	} else {
-		embed.Title += " - Hackban"
 	}
 
-	_, err = s.ChannelMessageSendEmbed(config.Ban, &embed)
+	_, err = s.ChannelMessageSendEmbed(dg.BanLog, &embed)
 	if err != nil {
 		fmt.Println("BAN LOG ERROR", err)
 	}
@@ -761,6 +786,10 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 				chstr = args[2]
 			}
 			channel, err = s.State.Channel(chstr)
+			if err != nil {
+				s.ChannelMessageSend(ch.ID, "no")
+				return
+			}
 		}
 		switch strings.ToLower(args[1]) {
 		case "join":
