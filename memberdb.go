@@ -17,6 +17,7 @@ func NewMemberDB() (*badger.DB, error) {
 	opts := badger.DefaultOptions
 	opts.Dir = "./tmp/mem"
 	opts.ValueDir = "./tmp/mem"
+	opts.Truncate = true
 	db, err := badger.Open(opts)
 	if err != nil {
 		fmt.Println(err)
@@ -37,20 +38,16 @@ func LoadMember(m *discordgo.Member) error {
 		return err
 	}
 
-	err = msgDB.Update(func(txn *badger.Txn) error {
-		err := txn.Set([]byte(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID)), buf.Bytes())
-		if err != nil {
-			return err
-		}
-		return nil
+	return memDB.Update(func(txn *badger.Txn) error {
+		return txn.Set([]byte(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID)), buf.Bytes())
 	})
-	return err
+
 }
 
 func GetMember(key string) (*discordgo.Member, error) {
 
 	body := []byte{}
-	err := msgDB.View(func(txn *badger.Txn) error {
+	err := memDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
@@ -71,16 +68,7 @@ func GetMember(key string) (*discordgo.Member, error) {
 }
 
 func DeleteMember(key string) error {
-	err := memDB.Update(func(txn *badger.Txn) error {
-		err := txn.Delete([]byte(key))
-		if err != nil {
-			return err
-		}
-		return nil
+	return memDB.Update(func(txn *badger.Txn) error {
+		return txn.Delete([]byte(key))
 	})
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	return nil
 }

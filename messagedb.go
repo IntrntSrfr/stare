@@ -20,6 +20,7 @@ func NewMessageDB() (*badger.DB, error) {
 	opts := badger.DefaultOptions
 	opts.Dir = "./tmp/msg"
 	opts.ValueDir = "./tmp/msg"
+	opts.Truncate = true
 	db, err := badger.Open(opts)
 	if err != nil {
 		fmt.Println(err)
@@ -57,11 +58,7 @@ func LoadMessage(m *discordgo.Message) error {
 	}
 
 	err = msgDB.Update(func(txn *badger.Txn) error {
-		err := txn.Set([]byte(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID)), buf.Bytes())
-		if err != nil {
-			return err
-		}
-		return nil
+		return txn.Set([]byte(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID)), buf.Bytes())
 	})
 	return err
 }
