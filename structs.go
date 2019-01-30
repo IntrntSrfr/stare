@@ -3,10 +3,8 @@ package main
 import "github.com/bwmarrin/discordgo"
 
 type Config struct {
-	OwnerID          string `json:"OwnerID"`
 	Token            string `json:"Token"`
 	OWOApiKey        string `json:"OWOApiKey"`
-	ConnectionString string `json:"ConnectionString"`
 	MsgEdit          string `json:"MsgEdit"`
 	MsgDelete        string `json:"MsgDelete"`
 	Ban              string `json:"Ban"`

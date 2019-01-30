@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"database/sql"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -28,7 +27,6 @@ var (
 	OWOC   *OWOClient
 	memDB  *badger.DB
 	msgDB  *badger.DB
-	db     *sql.DB
 	err    error
 )
 
@@ -69,13 +67,6 @@ func main() {
 		return
 	}
 
-	db, err = sql.Open("postgres", config.ConnectionString)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer db.Close()
-
 	OWOC = NewOWOClient(config.OWOApiKey)
 
 	addHandlers(client)
@@ -111,37 +102,23 @@ func addHandlers(s *discordgo.Session) {
 
 func GuildCreateHandler(s *discordgo.Session, g *discordgo.GuildCreate) {
 
-	var count int
+	go func() {
+		for _, mem := range g.Members {
+			/*
+				go func(m *discordgo.Member) {
+					err = LoadMember(m)
+				}(mem)
+			*/
 
-	row := db.QueryRow("SELECT COUNT(*) FROM discordguilds WHERE guildid = $1;", g.ID)
+			err = LoadMember(mem)
+			if err != nil {
+				continue
+			}
 
-	err := row.Scan(&count)
-	if err != nil {
-		return
-	}
-	if count == 0 {
-		_, err := db.Exec("INSERT INTO discordguilds(guildid, msgeditlog, msgdeletelog, banlog, unbanlog, joinlog, leavelog) VALUES($1, $2, $3, $4, $5, $6, $7);", g.ID, "", "", "", "", "", "")
-		if err != nil {
-			fmt.Println(err)
-			return
 		}
-	}
+		fmt.Println("loaded", g.Name)
+	}()
 
-	for _, mem := range g.Members {
-		/*
-			go func(m *discordgo.Member) {
-				err = LoadMember(m)
-			}(mem)
-		*/
-
-		err = LoadMember(mem)
-		if err != nil {
-			continue
-		}
-
-	}
-
-	fmt.Println("loaded", g.Name)
 }
 
 func GuildUnavailableHandler(s *discordgo.Session, g *discordgo.GuildDelete) {
@@ -162,18 +139,6 @@ func GuildMemberAddHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 		fmt.Println(err)
 		return
 	}
-	/*
-		row := db.QueryRow("SELECT joinlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err = row.Scan(&dg.JoinLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.JoinLog == "" {
-			return
-		}
-	*/
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
 		return
@@ -220,18 +185,6 @@ func GuildMemberAddHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 }
 
 func GuildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
-	/*
-		row := db.QueryRow("SELECT leavelog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.LeaveLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.LeaveLog == "" {
-			return
-		}
-	*/
 	roles := []string{}
 
 	g, err := s.State.Guild(m.GuildID)
@@ -300,18 +253,6 @@ func GuildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemo
 }
 
 func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
-	/*
-		row := db.QueryRow("SELECT banlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.BanLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.BanLog == "" {
-			return
-		}
-	*/
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
 		return
@@ -344,21 +285,8 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 
 	_, err = GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
 	if err != nil {
-		/*
-			d, _ := json.MarshalIndent(cmem, "", "\t")
-			fmt.Println(string(d))
-		*/
 		embed.Title += " - Hackban"
 	} else {
-		/*
-			d, _ := json.MarshalIndent(cmem, "", "\t")
-			fmt.Println(string(d))
-			current := time.Now().Unix()
-				fmt.Println(current)
-
-				jeff := current - int64((time.Hour * 24).Seconds())
-				fmt.Println(strconv.FormatInt(jeff, 10))
-		*/
 		messagelog := []*DMsg{}
 
 		err = msgDB.View(func(txn *badger.Txn) error {
@@ -379,10 +307,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 				if err != nil {
 					continue
 				}
-				/*
-					d, _ := json.MarshalIndent(msg, "", "\t")
-					fmt.Println(string(d))
-				*/
+
 				if msg.Message.Author.ID == m.User.ID {
 
 					msgid, err := strconv.ParseInt(msg.Message.ID, 10, 0)
@@ -462,18 +387,6 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 }
 
 func GuildBanRemoveHandler(s *discordgo.Session, m *discordgo.GuildBanRemove) {
-	/*
-		row := db.QueryRow("SELECT unbanlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.UnbanLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.UnbanLog == "" {
-			return
-		}
-	*/
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
 		return
@@ -502,7 +415,6 @@ func GuildBanRemoveHandler(s *discordgo.Session, m *discordgo.GuildBanRemove) {
 		},
 	}
 
-	//_, err = s.ChannelMessageSendEmbed(dg.UnbanLog, &embed)
 	_, err = s.ChannelMessageSendEmbed(config.Unban, &embed)
 	if err != nil {
 		fmt.Println("UNBAN LOG ERROR", err)
@@ -510,18 +422,11 @@ func GuildBanRemoveHandler(s *discordgo.Session, m *discordgo.GuildBanRemove) {
 }
 
 func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
-	/*
-		row := db.QueryRow("SELECT msgeditlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.MsgEditLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.MsgEditLog == "" {
-			return
-		}
-	*/
+	// This means it was an image update and not an actual edit
+	if m.Message.Content == "" {
+		return
+	}
+
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
 		return
@@ -571,9 +476,12 @@ func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 			Text:    g.Name,
 		},
 	}
-	//_, err = s.ChannelMessageSendEmbed(dg.MsgEditLog, &embed)
 	_, err = s.ChannelMessageSendEmbed(config.MsgEdit, &embed)
 	if err != nil {
+		d, err := json.MarshalIndent(embed, "", "\t")
+		if err == nil {
+			fmt.Println(string(d))
+		}
 		fmt.Println("EDIT LOG ERROR", err)
 	}
 
@@ -587,18 +495,6 @@ func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 }
 
 func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
-	/*
-		row := db.QueryRow("SELECT msgdeletelog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.MsgDeleteLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.MsgDeleteLog == "" {
-			return
-		}
-	*/
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
 		return
@@ -662,18 +558,6 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 }
 
 func MessageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDelete) {
-	/*
-		row := db.QueryRow("SELECT msgdeletelog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-		dg := DiscordGuild{}
-		err := row.Scan(&dg.MsgDeleteLog)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if dg.MsgDeleteLog == "" {
-			return
-		}
-	*/
 
 	msg, err := GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
 	if err != nil {
@@ -761,13 +645,8 @@ func MessageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDelete) {
 	}
 }
 
-//var jeff = 0
-
 func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
-	/*
-		fmt.Println(jeff)
-		jeff++
-	*/
+
 	if m.Author.Bot {
 		return
 	}
@@ -793,67 +672,6 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if err != nil {
 		fmt.Println("MESSAGE CREATE ERROR", err)
 		return
-	}
-
-	args := strings.Split(m.Content, " ")
-	if args[0] == "fl.set" {
-		if len(args) < 2 {
-			return
-		}
-		channel := ch
-		chstr := ""
-		if len(args) > 2 {
-			if strings.HasPrefix(args[2], "<#") && strings.HasSuffix(args[2], ">") {
-				chstr = args[2]
-				chstr = chstr[2 : len(chstr)-1]
-			} else {
-				chstr = args[2]
-			}
-			channel, err = s.State.Channel(chstr)
-			if err != nil {
-				s.ChannelMessageSend(ch.ID, "no")
-				return
-			}
-		}
-		switch strings.ToLower(args[1]) {
-		case "join":
-			db.Exec("UPDATE discordguilds SET joinlog=$1 WHERE guildid=$2", channel.ID, g.ID)
-			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set join logs to %v.", channel.Mention()))
-		case "leave":
-			db.Exec("UPDATE discordguilds SET leavelog=$1 WHERE guildid=$2", channel.ID, g.ID)
-			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set leave logs to %v.", channel.Mention()))
-		case "msgdelete":
-			db.Exec("UPDATE discordguilds SET msgdeletelog=$1 WHERE guildid=$2", channel.ID, g.ID)
-			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set message delete logs to %v.", channel.Mention()))
-		case "msgedit":
-			db.Exec("UPDATE discordguilds SET msgeditlog=$1 WHERE guildid=$2", channel.ID, g.ID)
-			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set message edit logs to %v.", channel.Mention()))
-		case "ban":
-			db.Exec("UPDATE discordguilds SET banlog=$1 WHERE guildid=$2", channel.ID, g.ID)
-			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set ban logs to %v.", channel.Mention()))
-		case "unban":
-			db.Exec("UPDATE discordguilds SET unbanlog=$1 WHERE guildid=$2", channel.ID, g.ID)
-			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set unban logs to %v.", channel.Mention()))
-
-		default:
-			s.ChannelMessageSend(ch.ID, "no")
-		}
-	} else if args[0] == "fl.help" {
-
-		text := "To set a log channel, do `fl.set <logtype> <channel>`, where channel is optional.\n"
-		text += "Logtypes:\n"
-		text += "Join - When a user joins the server\n"
-		text += "Leave - When a user leaves the server\n"
-		text += "Msgdelete - When a message is deleted\n"
-		text += "Msgedit - When a message is edited\n"
-		text += "Ban - When a user got banned\n"
-		text += "Unban - When a user got unbanned\n"
-		text += "\n"
-		text += "Example - fl.set join\n"
-		text += "Example - fl.set join #join-logs\n"
-		text += "Example - fl.set join 1234123412341234\n"
-
-		s.ChannelMessageSend(ch.ID, text)
 	}
 }
 
