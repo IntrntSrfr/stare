@@ -18,14 +18,13 @@ import (
 
 	"github.com/intrntsrfr/functional-logger/loggerdb"
 	"github.com/intrntsrfr/functional-logger/owo"
-	"github.com/intrntsrfr/functional-logger/structs"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/dgraph-io/badger"
 )
 
 var (
-	config   structs.Config
+	config   Config
 	OWOC     *owo.OWOClient
 	loggerDB *loggerdb.LoggerDB
 	err      error
@@ -282,7 +281,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 	if err != nil {
 		embed.Title += " - Hackban"
 	} else {
-		messagelog := []*structs.DMsg{}
+		messagelog := []*loggerdb.DMsg{}
 
 		err = loggerDB.Db.View(func(txn *badger.Txn) error {
 			it := txn.NewIterator(badger.DefaultIteratorOptions)
@@ -296,7 +295,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 				if err != nil {
 					continue
 				}
-				msg := &structs.DMsg{}
+				msg := &loggerdb.DMsg{}
 				err = gob.NewDecoder(bytes.NewReader(body)).Decode(msg)
 				if err != nil {
 					continue
@@ -334,7 +333,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 
 		text := ""
 
-		sort.Sort(structs.ByID(messagelog))
+		sort.Sort(loggerdb.ByID(messagelog))
 
 		for _, cmsg := range messagelog {
 			if cmsg.Message.Author.ID == m.User.ID {
@@ -511,7 +510,7 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 			Text:    g.Name,
 		},
 	}
-	deletedmsgs := []*structs.DMsg{}
+	deletedmsgs := []*loggerdb.DMsg{}
 	for _, msgid := range m.Messages {
 		delmsg, err := loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
 		if err != nil {
@@ -520,7 +519,7 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 		deletedmsgs = append(deletedmsgs, delmsg)
 	}
 
-	sort.Sort(structs.ByID(deletedmsgs))
+	sort.Sort(loggerdb.ByID(deletedmsgs))
 
 	text := fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123))
 

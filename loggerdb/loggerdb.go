@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/dgraph-io/badger/options"
-	"github.com/intrntsrfr/functional-logger/structs"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/dgraph-io/badger"
@@ -83,7 +82,7 @@ func (db *LoggerDB) DeleteMember(key string) error {
 
 func (db *LoggerDB) SetMessage(m *discordgo.Message) error {
 
-	msg := &structs.DMsg{
+	msg := &DMsg{
 		Message:     m,
 		Attachments: [][]byte{},
 	}
@@ -114,7 +113,7 @@ func (db *LoggerDB) SetMessage(m *discordgo.Message) error {
 	return err
 }
 
-func (db *LoggerDB) GetMessage(key string) (*structs.DMsg, error) {
+func (db *LoggerDB) GetMessage(key string) (*DMsg, error) {
 	body := []byte{}
 	err := db.Db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte("message:" + key))
@@ -130,7 +129,7 @@ func (db *LoggerDB) GetMessage(key string) (*structs.DMsg, error) {
 	if err != nil {
 		return nil, err
 	}
-	msg := &structs.DMsg{}
+	msg := &DMsg{}
 	err = gob.NewDecoder(bytes.NewReader(body)).Decode(msg)
 	if err != nil {
 		return nil, err

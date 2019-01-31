@@ -8,8 +8,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-
-	"github.com/intrntsrfr/functional-logger/structs"
 )
 
 type OWOClient struct {
@@ -64,7 +62,7 @@ func (o *OWOClient) Upload(text string) (string, error) {
 		return "", err
 	}
 
-	jeff := structs.OWOResult{}
+	jeff := OWOResult{}
 	json.Unmarshal(resbody, &jeff)
 
 	if len(jeff.Files) > 0 {
