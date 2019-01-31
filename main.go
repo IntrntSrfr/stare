@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -20,13 +19,12 @@ import (
 	"github.com/intrntsrfr/functional-logger/owo"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/dgraph-io/badger"
 )
 
 var (
 	config   Config
-	OWOC     *owo.OWOClient
-	loggerDB *loggerdb.LoggerDB
+	owoCl    *owo.OWOClient
+	loggerDB *loggerdb.DB
 	err      error
 )
 
@@ -48,12 +46,14 @@ func main() {
 
 	json.Unmarshal(file, &config)
 
+	fmt.Println(config)
+
 	loggerDB, err = loggerdb.NewDB()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer loggerDB.Db.Close()
+	defer loggerDB.Close()
 
 	client, err := discordgo.New("Bot " + config.Token)
 	if err != nil {
@@ -61,7 +61,7 @@ func main() {
 		return
 	}
 
-	OWOC = owo.NewOWOClient(config.OWOApiKey)
+	owoCl = owo.NewOWOClient(config.OwoAPIKey)
 
 	addHandlers(client)
 
@@ -283,49 +283,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 	} else {
 		messagelog := []*loggerdb.DMsg{}
 
-		err = loggerDB.Db.View(func(txn *badger.Txn) error {
-			it := txn.NewIterator(badger.DefaultIteratorOptions)
-			defer it.Close()
-
-			prefix := []byte(fmt.Sprintf("%v:", m.GuildID))
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				item := it.Item()
-
-				body, err := item.ValueCopy(nil)
-				if err != nil {
-					continue
-				}
-				msg := &loggerdb.DMsg{}
-				err = gob.NewDecoder(bytes.NewReader(body)).Decode(msg)
-				if err != nil {
-					continue
-				}
-
-				if msg.Message.Author.ID == m.User.ID {
-
-					msgid, err := strconv.ParseInt(msg.Message.ID, 10, 0)
-					if err != nil {
-						continue
-					}
-					msgts := ((msgid >> 22) + 1420070400000) / 1000
-
-					dayAgo := ts.Unix() - int64((time.Hour * 24).Seconds())
-
-					if msgts > dayAgo {
-						messagelog = append(messagelog, msg)
-					}
-				}
-
-				/*
-
-					unixmsgts := ((msgts >> 22) + 1420070400000) / 1000
-
-					if dayAgo > unixmsgts {
-						messagelog = append(messagelog, msg)
-					} */
-			}
-			return nil
-		})
+		loggerDB.GetMessageLog(messagelog, m)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -353,7 +311,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 
 		if len(messagelog) > 0 {
 
-			link, err := OWOC.Upload(text)
+			link, err := owoCl.Upload(text)
 			if err != nil {
 				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 					Name:  "24h user log",
@@ -531,7 +489,7 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 		}
 	}
 
-	res, err := OWOC.Upload(text)
+	res, err := owoCl.Upload(text)
 
 	if err != nil {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{

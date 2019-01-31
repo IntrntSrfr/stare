@@ -1,12 +1,12 @@
 package main
 
 type Config struct {
-	Token     string `json:"Token"`
-	OWOApiKey string `json:"OWOApiKey"`
-	MsgEdit   string `json:"MsgEdit"`
-	MsgDelete string `json:"MsgDelete"`
-	Ban       string `json:"Ban"`
-	Unban     string `json:"Unban"`
-	Join      string `json:"Join"`
-	Leave     string `json:"Leave"`
+	Token     string `json:"token"`
+	OwoAPIKey string `json:"owo_api_key"`
+	MsgEdit   string `json:"msg_edit"`
+	MsgDelete string `json:"msg_delete"`
+	Ban       string `json:"ban"`
+	Unban     string `json:"unban"`
+	Join      string `json:"join"`
+	Leave     string `json:"leave"`
 }
