@@ -16,18 +16,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dgraph-io/badger"
+	"github.com/intrntsrfr/functional-logger/loggerdb"
+	"github.com/intrntsrfr/functional-logger/owo"
+	"github.com/intrntsrfr/functional-logger/structs"
 
 	"github.com/bwmarrin/discordgo"
-	_ "github.com/lib/pq"
+	"github.com/dgraph-io/badger"
 )
 
 var (
-	config Config
-	OWOC   *OWOClient
-	memDB  *badger.DB
-	msgDB  *badger.DB
-	err    error
+	config   structs.Config
+	OWOC     *owo.OWOClient
+	loggerDB *loggerdb.LoggerDB
+	err      error
 )
 
 const (
@@ -48,18 +49,12 @@ func main() {
 
 	json.Unmarshal(file, &config)
 
-	msgDB, err = NewMessageDB()
+	loggerDB, err = loggerdb.NewDB()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer msgDB.Close()
-	memDB, err = NewMemberDB()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer memDB.Close()
+	defer loggerDB.Db.Close()
 
 	client, err := discordgo.New("Bot " + config.Token)
 	if err != nil {
@@ -67,7 +62,7 @@ func main() {
 		return
 	}
 
-	OWOC = NewOWOClient(config.OWOApiKey)
+	OWOC = owo.NewOWOClient(config.OWOApiKey)
 
 	addHandlers(client)
 
@@ -110,7 +105,7 @@ func GuildCreateHandler(s *discordgo.Session, g *discordgo.GuildCreate) {
 				}(mem)
 			*/
 
-			err = LoadMember(mem)
+			err = loggerDB.SetMember(mem)
 			if err != nil {
 				continue
 			}
@@ -126,7 +121,7 @@ func GuildUnavailableHandler(s *discordgo.Session, g *discordgo.GuildDelete) {
 }
 
 func GuildMemberUpdateHandler(s *discordgo.Session, m *discordgo.GuildMemberUpdate) {
-	err := LoadMember(m.Member)
+	err := loggerDB.SetMember(m.Member)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -134,7 +129,7 @@ func GuildMemberUpdateHandler(s *discordgo.Session, m *discordgo.GuildMemberUpda
 }
 
 func GuildMemberAddHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
-	err := LoadMember(m.Member)
+	err := loggerDB.SetMember(m.Member)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -192,7 +187,7 @@ func GuildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemo
 		return
 	}
 
-	mem, err := GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
+	mem, err := loggerDB.GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
 
 	for _, r := range mem.Roles {
 		roles = append(roles, fmt.Sprintf("<@&%v>", r))
@@ -245,7 +240,7 @@ func GuildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemo
 		fmt.Println("LEAVE LOG ERROR", err)
 	}
 
-	err = DeleteMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
+	err = loggerDB.DeleteMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -283,13 +278,13 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 		},
 	}
 
-	_, err = GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
+	_, err = loggerDB.GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
 	if err != nil {
 		embed.Title += " - Hackban"
 	} else {
-		messagelog := []*DMsg{}
+		messagelog := []*structs.DMsg{}
 
-		err = msgDB.View(func(txn *badger.Txn) error {
+		err = loggerDB.Db.View(func(txn *badger.Txn) error {
 			it := txn.NewIterator(badger.DefaultIteratorOptions)
 			defer it.Close()
 
@@ -301,9 +296,8 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 				if err != nil {
 					continue
 				}
-				dec := gob.NewDecoder(bytes.NewReader(body))
-				msg := &DMsg{}
-				err = dec.Decode(msg)
+				msg := &structs.DMsg{}
+				err = gob.NewDecoder(bytes.NewReader(body)).Decode(msg)
 				if err != nil {
 					continue
 				}
@@ -340,7 +334,7 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 
 		text := ""
 
-		sort.Sort(ByID(messagelog))
+		sort.Sort(structs.ByID(messagelog))
 
 		for _, cmsg := range messagelog {
 			if cmsg.Message.Author.ID == m.User.ID {
@@ -432,7 +426,7 @@ func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 		return
 	}
 
-	oldm, err := GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
+	oldm, err := loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
 	if err != nil {
 		return
 	}
@@ -487,7 +481,7 @@ func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 
 	oldm.Message.Content = m.Content
 
-	err = LoadMessage(oldm.Message)
+	err = loggerDB.SetMessage(oldm.Message)
 	if err != nil {
 		fmt.Println("ERROR")
 		return
@@ -517,16 +511,16 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 			Text:    g.Name,
 		},
 	}
-	deletedmsgs := []*DMsg{}
+	deletedmsgs := []*structs.DMsg{}
 	for _, msgid := range m.Messages {
-		delmsg, err := GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
+		delmsg, err := loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
 		if err != nil {
 			continue
 		}
 		deletedmsgs = append(deletedmsgs, delmsg)
 	}
 
-	sort.Sort(ByID(deletedmsgs))
+	sort.Sort(structs.ByID(deletedmsgs))
 
 	text := fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123))
 
@@ -559,7 +553,7 @@ func MessageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBu
 
 func MessageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDelete) {
 
-	msg, err := GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
+	msg, err := loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
 	if err != nil {
 		//fmt.Println(err)
 		return
@@ -668,7 +662,7 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	fmt.Println(fmt.Sprintf("%v - %v - %v: %v", g.Name, ch.Name, m.Author.String(), m.Content))
 
-	err = LoadMessage(m.Message)
+	err = loggerDB.SetMessage(m.Message)
 	if err != nil {
 		fmt.Println("MESSAGE CREATE ERROR", err)
 		return

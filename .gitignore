@@ -1,5 +1,5 @@
 config.json
 *.zip
 .idea
-/tmp
+/data
 *.exe

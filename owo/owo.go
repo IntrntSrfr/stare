@@ -1,4 +1,4 @@
-package main
+package owo
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+
+	"github.com/intrntsrfr/functional-logger/structs"
 )
 
 type OWOClient struct {
@@ -62,7 +64,7 @@ func (o *OWOClient) Upload(text string) (string, error) {
 		return "", err
 	}
 
-	jeff := OWOResult{}
+	jeff := structs.OWOResult{}
 	json.Unmarshal(resbody, &jeff)
 
 	if len(jeff.Files) > 0 {
