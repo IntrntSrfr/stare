@@ -143,13 +143,14 @@ func (db *DB) GetMessage(key string) (*DMsg, error) {
 	return msg, nil
 }
 
-func (db *DB) GetMessageLog(messagelog []*DMsg, m *discordgo.GuildBanAdd) error {
-	return db.db.View(func(txn *badger.Txn) error {
+func (db *DB) GetMessageLog(m *discordgo.GuildBanAdd) ([]*DMsg, error) {
+	messagelog := []*DMsg{}
+	err := db.db.View(func(txn *badger.Txn) error {
 		ts := time.Now()
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
-		prefix := []byte(fmt.Sprintf("%v:", m.GuildID))
+		prefix := []byte(fmt.Sprintf("message:%v:", m.GuildID))
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 
@@ -174,6 +175,7 @@ func (db *DB) GetMessageLog(messagelog []*DMsg, m *discordgo.GuildBanAdd) error 
 				dayAgo := ts.Unix() - int64((time.Hour * 24).Seconds())
 
 				if msgts > dayAgo {
+
 					messagelog = append(messagelog, msg)
 				}
 			}
@@ -188,4 +190,38 @@ func (db *DB) GetMessageLog(messagelog []*DMsg, m *discordgo.GuildBanAdd) error 
 		}
 		return nil
 	})
+	return messagelog, err
+}
+
+func (db *DB) LenMembers() (int, error) {
+
+	count := 0
+	err := db.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+
+		prefix := []byte("member:")
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			count++
+		}
+		return nil
+	})
+
+	return count, err
+}
+func (db *DB) LenMessages() (int, error) {
+
+	count := 0
+	err := db.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+
+		prefix := []byte("message:")
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			count++
+		}
+		return nil
+	})
+
+	return count, err
 }

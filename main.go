@@ -46,8 +46,6 @@ func main() {
 
 	json.Unmarshal(file, &config)
 
-	fmt.Println(config)
-
 	loggerDB, err = loggerdb.NewDB()
 	if err != nil {
 		fmt.Println(err)
@@ -281,9 +279,8 @@ func GuildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 	if err != nil {
 		embed.Title += " - Hackban"
 	} else {
-		messagelog := []*loggerdb.DMsg{}
 
-		loggerDB.GetMessageLog(messagelog, m)
+		messagelog, err := loggerDB.GetMessageLog(m)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -429,10 +426,6 @@ func MessageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 	}
 	_, err = s.ChannelMessageSendEmbed(config.MsgEdit, &embed)
 	if err != nil {
-		d, err := json.MarshalIndent(embed, "", "\t")
-		if err == nil {
-			fmt.Println(string(d))
-		}
 		fmt.Println("EDIT LOG ERROR", err)
 	}
 
@@ -619,10 +612,26 @@ func MessageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	fmt.Println(fmt.Sprintf("%v - %v - %v: %v", g.Name, ch.Name, m.Author.String(), m.Content))
 
-	err = loggerDB.SetMessage(m.Message)
-	if err != nil {
-		fmt.Println("MESSAGE CREATE ERROR", err)
-		return
+	go loggerDB.SetMessage(m.Message)
+	/*
+		err = loggerDB.SetMessage(m.Message)
+		if err != nil {
+			fmt.Println("MESSAGE CREATE ERROR", err)
+			return
+		}
+	*/
+	if m.Content == "fl.len" {
+		count, err := loggerDB.LenMessages()
+		if err != nil {
+			return
+		}
+		s.ChannelMessageSend(ch.ID, fmt.Sprintf("messages: %v", count))
+	} else if m.Content == "fl.mlen" {
+		count, err := loggerDB.LenMembers()
+		if err != nil {
+			return
+		}
+		s.ChannelMessageSend(ch.ID, fmt.Sprintf("memebers: %v", count))
 	}
 }
 
