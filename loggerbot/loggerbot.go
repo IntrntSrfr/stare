@@ -534,7 +534,6 @@ func (b *Bot) messageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDel
 }
 
 func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
-
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
 		b.logger.Info("error", zap.Error(err))
@@ -562,6 +561,7 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 	for _, msgid := range m.Messages {
 		delmsg, err := b.loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
 		if err != nil {
+			b.logger.Info("error", zap.Error(err))
 			continue
 		}
 		deletedmsgs = append(deletedmsgs, delmsg)
@@ -569,17 +569,18 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 
 	sort.Sort(loggerdb.ByID(deletedmsgs))
 
-	text := fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123))
+	text := strings.Builder{}
+	text.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123)))
 
 	for _, msg := range deletedmsgs {
 		if len(msg.Attachments) > 0 {
-			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
 		} else {
-			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
 		}
 	}
 
-	res, err := b.owo.Upload(text)
+	res, err := b.owo.Upload(text.String())
 
 	if err != nil {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
