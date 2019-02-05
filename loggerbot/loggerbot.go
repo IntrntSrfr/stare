@@ -75,6 +75,8 @@ func (b *Bot) addHandlers() {
 
 func (b *Bot) guildCreateHandler(s *discordgo.Session, g *discordgo.GuildCreate) {
 
+	b.logger.Info("EVENT: GUILD CREATE")
+
 	go func() {
 		for _, mem := range g.Members {
 			/*
@@ -83,16 +85,15 @@ func (b *Bot) guildCreateHandler(s *discordgo.Session, g *discordgo.GuildCreate)
 				}(mem)
 			*/
 
-			err := b.loggerDB.SetMember(mem)
+			err := b.loggerDB.SetMember(mem, 1)
 			if err != nil {
 				b.logger.Info("error", zap.Error(err))
 				continue
 			}
-
 		}
+		b.logger.Info(fmt.Sprintf("LOADED %v", g.Name))
 		fmt.Println("loaded", g.Name)
 	}()
-
 }
 
 func (b *Bot) guildUnavailableHandler(s *discordgo.Session, g *discordgo.GuildDelete) {
@@ -100,7 +101,8 @@ func (b *Bot) guildUnavailableHandler(s *discordgo.Session, g *discordgo.GuildDe
 }
 
 func (b *Bot) guildMemberUpdateHandler(s *discordgo.Session, m *discordgo.GuildMemberUpdate) {
-	err := b.loggerDB.SetMember(m.Member)
+
+	err := b.loggerDB.SetMember(m.Member, 0)
 	if err != nil {
 		fmt.Println(err)
 		b.logger.Info("error", zap.Error(err))
@@ -109,7 +111,8 @@ func (b *Bot) guildMemberUpdateHandler(s *discordgo.Session, m *discordgo.GuildM
 }
 
 func (b *Bot) guildMemberAddHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
-	err := b.loggerDB.SetMember(m.Member)
+
+	err := b.loggerDB.SetMember(m.Member, 1)
 	if err != nil {
 		fmt.Println(err)
 		b.logger.Info("error", zap.Error(err))
@@ -380,7 +383,6 @@ func (b *Bot) messageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpd
 
 	oldm, err := b.loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
 	if err != nil {
-		b.logger.Info("error", zap.Error(err))
 		return
 	}
 
@@ -439,78 +441,11 @@ func (b *Bot) messageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpd
 	}
 }
 
-func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
-	g, err := s.State.Guild(m.GuildID)
-	if err != nil {
-		b.logger.Info("error", zap.Error(err))
-		return
-	}
-	ts := time.Now()
-
-	embed := discordgo.MessageEmbed{
-		Color: dColorWhite,
-		Title: fmt.Sprintf("Bulk message delete - (%v) messages deleted", len(m.Messages)),
-		Fields: []*discordgo.MessageEmbedField{
-			&discordgo.MessageEmbedField{
-				Name:   "Channel",
-				Value:  fmt.Sprintf("<#%v>", m.ChannelID),
-				Inline: true,
-			},
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-		Footer: &discordgo.MessageEmbedFooter{
-			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
-			Text:    g.Name,
-		},
-	}
-	deletedmsgs := []*loggerdb.DMsg{}
-	for _, msgid := range m.Messages {
-		delmsg, err := b.loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
-		if err != nil {
-			b.logger.Info("error", zap.Error(err))
-			continue
-		}
-		deletedmsgs = append(deletedmsgs, delmsg)
-	}
-
-	sort.Sort(loggerdb.ByID(deletedmsgs))
-
-	text := strings.Builder{}
-	text.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123)))
-
-	for _, msg := range deletedmsgs {
-		if len(msg.Attachments) > 0 {
-			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
-		} else {
-			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
-		}
-	}
-
-	res, err := b.owo.Upload(text.String())
-
-	if err != nil {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Logged messages:",
-			Value: "Error getting link",
-		})
-	} else {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Logged messages:",
-			Value: res,
-		})
-	}
-	_, err = s.ChannelMessageSendEmbed(b.config.MsgDelete, &embed)
-	if err != nil {
-		fmt.Println("BULK DELETE LOG ERROR", err)
-	}
-}
-
 func (b *Bot) messageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDelete) {
 
 	msg, err := b.loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
 	if err != nil {
 		//fmt.Println(err)
-		b.logger.Info("error", zap.Error(err))
 		return
 	}
 	g, err := s.State.Guild(m.GuildID)
@@ -598,6 +533,71 @@ func (b *Bot) messageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDel
 	}
 }
 
+func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
+
+	g, err := s.State.Guild(m.GuildID)
+	if err != nil {
+		b.logger.Info("error", zap.Error(err))
+		return
+	}
+	ts := time.Now()
+
+	embed := discordgo.MessageEmbed{
+		Color: dColorWhite,
+		Title: fmt.Sprintf("Bulk message delete - (%v) messages deleted", len(m.Messages)),
+		Fields: []*discordgo.MessageEmbedField{
+			&discordgo.MessageEmbedField{
+				Name:   "Channel",
+				Value:  fmt.Sprintf("<#%v>", m.ChannelID),
+				Inline: true,
+			},
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+		Footer: &discordgo.MessageEmbedFooter{
+			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
+			Text:    g.Name,
+		},
+	}
+	deletedmsgs := []*loggerdb.DMsg{}
+	for _, msgid := range m.Messages {
+		delmsg, err := b.loggerDB.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
+		if err != nil {
+			continue
+		}
+		deletedmsgs = append(deletedmsgs, delmsg)
+	}
+
+	sort.Sort(loggerdb.ByID(deletedmsgs))
+
+	text := fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123))
+
+	for _, msg := range deletedmsgs {
+		if len(msg.Attachments) > 0 {
+			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+		} else {
+			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+		}
+	}
+
+	res, err := b.owo.Upload(text)
+
+	if err != nil {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Logged messages:",
+			Value: "Error getting link",
+		})
+	} else {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Logged messages:",
+			Value: res,
+		})
+	}
+	_, err = s.ChannelMessageSendEmbed(b.config.MsgDelete, &embed)
+	if err != nil {
+		fmt.Println("BULK DELETE LOG ERROR", err)
+	}
+}
+
 func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if m.Author.Bot {
@@ -631,9 +631,9 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 			return
 		}
 	*/
-	if m.Content == "fl.len" {
+	if strings.HasPrefix(m.Content, "fl.len") {
 		s.ChannelMessageSend(ch.ID, fmt.Sprintf("messages: %v", b.loggerDB.TotalMessages))
-	} else if m.Content == "fl.mlen" {
+	} else if strings.HasPrefix(m.Content, "fl.mlen") {
 		s.ChannelMessageSend(ch.ID, fmt.Sprintf("members: %v", b.loggerDB.TotalMembers))
 	}
 }

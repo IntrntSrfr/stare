@@ -85,9 +85,9 @@ func (db *DB) LoadTotal() error {
 	return nil
 }
 
-func (db *DB) SetMember(m *discordgo.Member) error {
+func (db *DB) SetMember(m *discordgo.Member, delta int64) error {
 
-	atomic.AddInt64(&db.TotalMembers, 1)
+	atomic.AddInt64(&db.TotalMembers, delta)
 
 	var buf bytes.Buffer
 	err := gob.NewEncoder(&buf).Encode(m)
@@ -107,7 +107,10 @@ func (db *DB) GetMember(key string) (*discordgo.Member, error) {
 	err := db.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte("member:" + key))
 		if err != nil {
-			db.log.Info("error", zap.Error(err))
+			if err != badger.ErrKeyNotFound {
+				db.log.Info("error", zap.Error(err))
+			}
+			//db.log.Info(fmt.Sprintf("Key not found: %v", "member:"+key))
 			return err
 		}
 		body, err = item.ValueCopy(nil)
@@ -180,7 +183,10 @@ func (db *DB) GetMessage(key string) (*DMsg, error) {
 	err := db.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte("message:" + key))
 		if err != nil {
-			db.log.Info("error", zap.Error(err))
+			if err != badger.ErrKeyNotFound {
+				db.log.Info("error", zap.Error(err))
+			}
+			//db.log.Info(fmt.Sprintf("Key not found: %v", "message:"+key))
 			return err
 		}
 		body, err = item.ValueCopy(nil)
@@ -241,13 +247,6 @@ func (db *DB) GetMessageLog(m *discordgo.GuildBanAdd) ([]*DMsg, error) {
 				}
 			}
 
-			/*
-
-				unixmsgts := ((msgts >> 22) + 1420070400000) / 1000
-
-				if dayAgo > unixmsgts {
-					messagelog = append(messagelog, msg)
-				} */
 		}
 		return nil
 	})
