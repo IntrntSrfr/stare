@@ -281,8 +281,7 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 			return
 		}
 
-		text := ""
-
+		text := strings.Builder{}
 		sort.Sort(loggerdb.ByID(messagelog))
 
 		for _, cmsg := range messagelog {
@@ -294,16 +293,16 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 				}
 
 				if len(cmsg.Attachments) > 0 {
-					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\nMessage had attachment\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content)
+					text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\nMessage had attachment\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content))
 				} else {
-					text += fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content)
+					text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content))
 				}
 			}
 		}
 
 		if len(messagelog) > 0 {
 
-			link, err := b.owo.Upload(text)
+			link, err := b.owo.Upload(text.String())
 			if err != nil {
 				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 					Name:  "24h user log",
@@ -476,17 +475,18 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 
 	sort.Sort(loggerdb.ByID(deletedmsgs))
 
-	text := fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123))
+	text := strings.Builder{}
+	text.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123)))
 
 	for _, msg := range deletedmsgs {
 		if len(msg.Attachments) > 0 {
-			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
 		} else {
-			text += fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
 		}
 	}
 
-	res, err := b.owo.Upload(text)
+	res, err := b.owo.Upload(text.String())
 
 	if err != nil {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{

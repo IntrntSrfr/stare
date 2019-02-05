@@ -49,6 +49,7 @@ func main() {
 	if err != nil {
 		return
 	}
+	defer client.Close()
 
 	err = client.Run()
 	if err != nil {
@@ -59,5 +60,4 @@ func main() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
 
-	client.Close()
 }
