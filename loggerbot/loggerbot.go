@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/intrntsrfr/functional-logger/owo"
@@ -644,5 +645,6 @@ func (b *Bot) readyHandler(s *discordgo.Session, r *discordgo.Ready) {
 }
 
 func (b *Bot) disconnectHandler(s *discordgo.Session, d *discordgo.Disconnect) {
+	atomic.StoreInt64(&b.loggerDB.TotalMembers, 0)
 	fmt.Println("DISCONNECTED AT ", time.Now().Format(time.RFC1123))
 }
