@@ -19,11 +19,12 @@ import (
 )
 
 type Bot struct {
-	loggerDB *loggerdb.DB
-	logger   *zap.Logger
-	client   *discordgo.Session
-	config   *Config
-	owo      *owo.OWOClient
+	loggerDB  *loggerdb.DB
+	logger    *zap.Logger
+	client    *discordgo.Session
+	config    *Config
+	owo       *owo.OWOClient
+	starttime time.Time
 }
 
 func NewLoggerBot(Config *Config, LoggerDB *loggerdb.DB, Log *zap.Logger) (*Bot, error) {
@@ -39,11 +40,12 @@ func NewLoggerBot(Config *Config, LoggerDB *loggerdb.DB, Log *zap.Logger) (*Bot,
 	Log.Info("created owo client")
 
 	return &Bot{
-		client:   client,
-		config:   Config,
-		logger:   Log,
-		loggerDB: LoggerDB,
-		owo:      owoCl,
+		client:    client,
+		config:    Config,
+		logger:    Log,
+		loggerDB:  LoggerDB,
+		owo:       owoCl,
+		starttime: time.Now(),
 	}, nil
 
 }
@@ -581,22 +583,35 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 		}
 	}
 
-	res, err := b.owo.Upload(text.String())
+	if b.config.OwoAPIKey != "" {
 
-	if err != nil {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Logged messages:",
-			Value: "Error getting link",
-		})
+		res, err := b.owo.Upload(text.String())
+
+		if err != nil {
+			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+				Name:  "Logged messages:",
+				Value: "Error getting link",
+			})
+		} else {
+			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+				Name:  "Logged messages:",
+				Value: res,
+			})
+		}
+		_, err = s.ChannelMessageSendEmbed(b.config.MsgDelete, &embed)
+		if err != nil {
+			fmt.Println("BULK DELETE LOG ERROR", err)
+		}
 	} else {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Logged messages:",
-			Value: res,
-		})
-	}
-	_, err = s.ChannelMessageSendEmbed(b.config.MsgDelete, &embed)
-	if err != nil {
-		fmt.Println("BULK DELETE LOG ERROR", err)
+		jeff := bytes.Buffer{}
+		jeff.WriteString(text.String())
+
+		msg, err := s.ChannelMessageSendEmbed(b.config.MsgDelete, &embed)
+		if err != nil {
+			fmt.Println("BULK DELETE LOG ERROR", err)
+		}
+
+		s.ChannelFileSendWithMessage(b.config.MsgDelete, fmt.Sprintf("Log file for delete log message ID %v:", msg.ID), "deletelog_"+m.ChannelID+".txt", &jeff)
 	}
 }
 
@@ -637,6 +652,8 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 		s.ChannelMessageSend(ch.ID, fmt.Sprintf("messages: %v", b.loggerDB.TotalMessages))
 	} else if strings.HasPrefix(m.Content, "fl.mlen") {
 		s.ChannelMessageSend(ch.ID, fmt.Sprintf("members: %v", b.loggerDB.TotalMembers))
+	} else if strings.HasPrefix(m.Content, "fl.uptime") {
+		s.ChannelMessageSend(ch.ID, fmt.Sprintf("%v", fmt.Sprintf("Uptime: %v", time.Now().Sub(b.starttime).Round(time.Second).String())))
 	}
 }
 
