@@ -307,31 +307,45 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 		}
 
 		if len(messagelog) > 0 {
-
-			link, err := b.owo.Upload(text.String())
-			if err != nil {
-				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-					Name:  "24h user log",
-					Value: "Error getting link",
-				})
+			if b.config.OwoAPIKey != "" {
+				link, err := b.owo.Upload(text.String())
+				if err != nil {
+					embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+						Name:  "24h user log",
+						Value: "Error getting link",
+					})
+				} else {
+					embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+						Name:  "24h user log",
+						Value: link,
+					})
+				}
+				_, err = s.ChannelMessageSendEmbed(b.config.Ban, &embed)
+				if err != nil {
+					fmt.Println("BULK DELETE LOG ERROR", err)
+				}
 			} else {
-				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-					Name:  "24h user log",
-					Value: link,
-				})
+				jeff := bytes.Buffer{}
+				jeff.WriteString(text.String())
+
+				msg, err := s.ChannelMessageSendEmbed(b.config.Ban, &embed)
+				if err != nil {
+					fmt.Println("BULK DELETE LOG ERROR", err)
+				}
+
+				s.ChannelFileSendWithMessage(b.config.MsgDelete, fmt.Sprintf("Log file for delete log message ID %v:", msg.ID), "banlog_"+m.User.ID+".txt", &jeff)
 			}
 		} else {
 			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 				Name:  "24h user log",
 				Value: "No history.",
 			})
+			_, err = s.ChannelMessageSendEmbed(b.config.Ban, &embed)
+			if err != nil {
+				b.logger.Info("error", zap.Error(err))
+				fmt.Println("BAN LOG ERROR", err)
+			}
 		}
-	}
-
-	_, err = s.ChannelMessageSendEmbed(b.config.Ban, &embed)
-	if err != nil {
-		b.logger.Info("error", zap.Error(err))
-		fmt.Println("BAN LOG ERROR", err)
 	}
 }
 
@@ -513,8 +527,9 @@ func (b *Bot) messageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDel
 			fmt.Println("DELETE LOG SEND ERROR", err)
 			return
 		}
+
 		data := &discordgo.MessageSend{
-			Content: fmt.Sprintf("File(s) attached to message ID:%v", m.ID),
+			Content: fmt.Sprintf("File(s) attached to message ID: %v", m.ID),
 		}
 
 		for k, img := range msg.Attachments {
@@ -584,7 +599,6 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	if b.config.OwoAPIKey != "" {
-
 		res, err := b.owo.Upload(text.String())
 
 		if err != nil {
