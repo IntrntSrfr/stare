@@ -3,6 +3,7 @@ package owo
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -63,7 +64,14 @@ func (o *OWOClient) Upload(text string) (string, error) {
 	}
 
 	jeff := OWOResult{}
-	json.Unmarshal(resbody, &jeff)
+	err = json.Unmarshal(resbody, &jeff)
+	if err != nil {
+		return "", err
+	}
+
+	if !jeff.Success {
+		return "", errors.New(jeff.Description)
+	}
 
 	if len(jeff.Files) > 0 {
 		return "https://chito.ge/" + jeff.Files[0].URL, nil

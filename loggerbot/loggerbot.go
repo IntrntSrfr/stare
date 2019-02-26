@@ -317,7 +317,7 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 				} else {
 					embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 						Name:  "24h user log",
-						Value: link,
+						Value: "Link: " + link,
 					})
 				}
 				_, err = s.ChannelMessageSendEmbed(b.config.Ban, &embed)
@@ -609,7 +609,7 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 		} else {
 			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 				Name:  "Logged messages:",
-				Value: res,
+				Value: "Link: " + res,
 			})
 		}
 		_, err = s.ChannelMessageSendEmbed(b.config.MsgDelete, &embed)
