@@ -28,7 +28,7 @@ func (o *OWOClient) Upload(text string) (string, error) {
 	writer := multipart.NewWriter(body)
 
 	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", `form-data; name="files[]" filename="text.txt"`)
+	h.Set("Content-Disposition", `form-data; name="files[]"; filename="text.txt"`)
 	h.Set("Content-Type", "text/plain;charset=utf-8")
 
 	part, err := writer.CreatePart(h)

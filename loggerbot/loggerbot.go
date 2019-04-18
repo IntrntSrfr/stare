@@ -314,6 +314,7 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 						Name:  "24h user log",
 						Value: "Error getting link",
 					})
+					b.logger.Info("BAN LOG ERROR", zap.Error(err))
 				} else {
 					embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 						Name:  "24h user log",
@@ -322,7 +323,7 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 				}
 				_, err = s.ChannelMessageSendEmbed(b.config.Ban, &embed)
 				if err != nil {
-					fmt.Println("BULK DELETE LOG ERROR", err)
+					fmt.Println("BAN LOG ERROR", err)
 				}
 			} else {
 				jeff := bytes.Buffer{}
@@ -330,7 +331,7 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 
 				msg, err := s.ChannelMessageSendEmbed(b.config.Ban, &embed)
 				if err != nil {
-					fmt.Println("BULK DELETE LOG ERROR", err)
+					fmt.Println("BAN LOG ERROR", err)
 				}
 
 				s.ChannelFileSendWithMessage(b.config.MsgDelete, fmt.Sprintf("Log file for delete log message ID %v:", msg.ID), "banlog_"+m.User.ID+".txt", &jeff)
@@ -606,6 +607,7 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 				Name:  "Logged messages:",
 				Value: "Error getting link",
 			})
+			b.logger.Info("BULK DELETE LOG ERROR", zap.Error(err))
 		} else {
 			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 				Name:  "Logged messages:",
