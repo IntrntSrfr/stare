@@ -13,6 +13,7 @@ import (
 
 	"github.com/intrntsrfr/functional-logger/loggerbot"
 	"github.com/intrntsrfr/functional-logger/loggerdb"
+	_ "github.com/lib/pq"
 )
 
 func main() {
