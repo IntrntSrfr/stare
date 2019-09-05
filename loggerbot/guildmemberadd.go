@@ -12,18 +12,13 @@ import (
 
 func (b *Bot) guildMemberAddHandler(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 
-	row := b.db.QueryRow("SELECT joinlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-	dg := DiscordGuild{}
-	err := row.Scan(&dg.JoinLog)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	dg := Guild{}
+	b.db.Get(&dg, "SELECT join_log FROM guilds WHERE id=$1;", m.GuildID)
 	if dg.JoinLog == "" {
 		return
 	}
 
-	err = b.loggerDB.SetMember(m.Member, 1)
+	err := b.loggerDB.SetMember(m.Member, 1)
 	if err != nil {
 		fmt.Println(err)
 		b.logger.Info("error", zap.Error(err))

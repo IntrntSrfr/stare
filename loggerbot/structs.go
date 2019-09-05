@@ -4,12 +4,6 @@ type Config struct {
 	Token            string `json:"token"`
 	ConnectionString string `json:"connection_string"`
 	OwoAPIKey        string `json:"owo_api_key"`
-	MsgEdit          string `json:"msg_edit"`
-	MsgDelete        string `json:"msg_delete"`
-	Ban              string `json:"ban"`
-	Unban            string `json:"unban"`
-	Join             string `json:"join"`
-	Leave            string `json:"leave"`
 }
 
 const (
@@ -20,13 +14,24 @@ const (
 	dColorWhite  = 16777215
 )
 
-type DiscordGuild struct {
-	Uid          int
-	Guildid      string
-	MsgEditLog   string
-	MsgDeleteLog string
-	BanLog       string
-	UnbanLog     string
-	JoinLog      string
-	LeaveLog     string
+type Guild struct {
+	ID           string `json:"id" db:"id"`
+	MsgEditLog   string `json:"msg_edit_log" db:"msg_edit_log"`
+	MsgDeleteLog string `json:"msg_delete_log" db:"msg_delete_log"`
+	BanLog       string `json:"ban_log" db:"ban_log"`
+	UnbanLog     string `json:"unban_log" db:"unban_log"`
+	JoinLog      string `json:"join_log" db:"join_log"`
+	LeaveLog     string `json:"leave_log" db:"leave_log"`
 }
+
+const schemaGuild = `
+CREATE TABLE IF NOT EXISTS guilds (
+	id             TEXT PRIMARY KEY,
+	msg_edit_log   text,
+	msg_delete_log text,
+	ban_log        text,
+	unban_log      text,
+	join_log       text,
+	leave_log      text
+);
+`

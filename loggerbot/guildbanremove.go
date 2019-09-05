@@ -10,13 +10,8 @@ import (
 
 func (b *Bot) guildBanRemoveHandler(s *discordgo.Session, m *discordgo.GuildBanRemove) {
 
-	row := b.db.QueryRow("SELECT unbanlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-	dg := DiscordGuild{}
-	err := row.Scan(&dg.UnbanLog)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	dg := Guild{}
+	b.db.Get(&dg, "SELECT unban_log FROM guilds WHERE id=$1;", m.GuildID)
 	if dg.UnbanLog == "" {
 		return
 	}

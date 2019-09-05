@@ -32,7 +32,7 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 		return
 	}
 
-	fmt.Println(fmt.Sprintf("%v - %v - %v: %v", g.Name, ch.Name, m.Author.String(), m.Content))
+	//fmt.Println(fmt.Sprintf("%v - %v - %v: %v", g.Name, ch.Name, m.Author.String(), m.Content))
 
 	go b.loggerDB.SetMessage(m.Message)
 	/*
@@ -73,22 +73,22 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 		}
 		switch strings.ToLower(args[1]) {
 		case "join":
-			b.db.Exec("UPDATE discordguilds SET joinlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			b.db.Exec("UPDATE Guilds SET joinlog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set join logs to %v.", channel.Mention()))
 		case "leave":
-			b.db.Exec("UPDATE discordguilds SET leavelog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			b.db.Exec("UPDATE Guilds SET leavelog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set leave logs to %v.", channel.Mention()))
 		case "msgdelete":
-			b.db.Exec("UPDATE discordguilds SET msgdeletelog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			b.db.Exec("UPDATE Guilds SET msgdeletelog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set message delete logs to %v.", channel.Mention()))
 		case "msgedit":
-			b.db.Exec("UPDATE discordguilds SET msgeditlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			b.db.Exec("UPDATE Guilds SET msgeditlog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set message edit logs to %v.", channel.Mention()))
 		case "ban":
-			b.db.Exec("UPDATE discordguilds SET banlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			b.db.Exec("UPDATE Guilds SET banlog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set ban logs to %v.", channel.Mention()))
 		case "unban":
-			b.db.Exec("UPDATE discordguilds SET unbanlog=$1 WHERE guildid=$2", channel.ID, g.ID)
+			b.db.Exec("UPDATE Guilds SET unbanlog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set unban logs to %v.", channel.Mention()))
 
 		default:
@@ -96,20 +96,21 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 		}
 	} else if args[0] == "fl.help" {
 
-		text := "To set a log channel, do `fl.set <logtype> <channel>`, where channel is optional.\n"
-		text += "Log types:\n"
-		text += "Join - When a user joins the server\n"
-		text += "Leave - When a user leaves the server\n"
-		text += "Msgdelete - When a message is deleted\n"
-		text += "Msgedit - When a message is edited\n"
-		text += "Ban - When a user got banned\n"
-		text += "Unban - When a user got unbanned\n"
-		text += "\n"
-		text += "Example - fl.set join\n"
-		text += "Example - fl.set join #join-logs\n"
-		text += "Example - fl.set join 1234123412341234\n"
+		text := strings.Builder{}
+		text.WriteString("To set a log channel, do `fl.set <logtype> <channel>`, where channel is optional.\n")
+		text.WriteString("Log types:\n")
+		text.WriteString("Join - When a user joins the server\n")
+		text.WriteString("Leave - When a user leaves the server\n")
+		text.WriteString("Msgdelete - When a message is deleted\n")
+		text.WriteString("Msgedit - When a message is edited\n")
+		text.WriteString("Ban - When a user got banned\n")
+		text.WriteString("Unban - When a user got unbanned\n")
+		text.WriteString("\n")
+		text.WriteString("Example - fl.set join\n")
+		text.WriteString("Example - fl.set join #join-logs\n")
+		text.WriteString("Example - fl.set join 1234123412341234\n")
 
-		s.ChannelMessageSend(ch.ID, text)
+		s.ChannelMessageSend(ch.ID, text.String())
 	}
 
 }

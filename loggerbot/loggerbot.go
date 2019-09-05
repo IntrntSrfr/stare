@@ -1,23 +1,23 @@
 package loggerbot
 
 import (
-	"database/sql"
 	"fmt"
-	"sync/atomic"
+	"strconv"
 	"time"
 
-	"github.com/intrntsrfr/functional-logger/owo"
+	"github.com/intrntsrfr/owo"
 
 	"go.uber.org/zap"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/intrntsrfr/functional-logger/loggerdb"
+	"github.com/jmoiron/sqlx"
 )
 
 type Bot struct {
 	loggerDB  *loggerdb.DB
 	logger    *zap.Logger
-	db        *sql.DB
+	db        *sqlx.DB
 	client    *discordgo.Session
 	config    *Config
 	owo       *owo.OWOClient
@@ -33,7 +33,7 @@ func NewLoggerBot(Config *Config, LoggerDB *loggerdb.DB, Log *zap.Logger) (*Bot,
 	}
 	Log.Info("created discord client")
 
-	psql, err := sql.Open("postgres", Config.ConnectionString)
+	psql, err := sqlx.Connect("postgres", Config.ConnectionString)
 	if err != nil {
 		fmt.Println("could not connect to db " + err.Error())
 		Log.Error(err.Error())
@@ -56,6 +56,8 @@ func NewLoggerBot(Config *Config, LoggerDB *loggerdb.DB, Log *zap.Logger) (*Bot,
 }
 
 func (b *Bot) Close() {
+	b.logger.Info("Shutting down bot.")
+	b.db.Close()
 	b.client.Close()
 }
 
@@ -91,10 +93,34 @@ func (b *Bot) readyHandler(s *discordgo.Session, r *discordgo.Ready) {
 
 	b.loggerDB.RunGC()
 
-	timer := time.NewTicker(time.Hour)
+	gctimer := time.NewTicker(time.Hour)
+	statustimer := time.NewTicker(time.Second * 15)
 	go func() {
-		for range timer.C {
+		for range gctimer.C {
 			b.loggerDB.RunGC()
+		}
+	}()
+
+	go func() {
+		i := 0
+		for range statustimer.C {
+			switch i {
+			case 0:
+				s.UpdateStatus(0, "fl.help")
+				i++
+			case 1:
+				m := b.loggerDB.TotalMembers
+				s.UpdateStatusComplex(discordgo.UpdateStatusData{
+					Game: &discordgo.Game{
+						Name: "over all " + strconv.FormatInt(m, 10) + " of you",
+						Type: discordgo.GameTypeWatching,
+					},
+				})
+				i++
+			default:
+				i = 0
+			}
+
 		}
 	}()
 
@@ -102,6 +128,6 @@ func (b *Bot) readyHandler(s *discordgo.Session, r *discordgo.Ready) {
 }
 
 func (b *Bot) disconnectHandler(s *discordgo.Session, d *discordgo.Disconnect) {
-	atomic.StoreInt64(&b.loggerDB.TotalMembers, 0)
+	//atomic.StoreInt64(&b.loggerDB.TotalMembers, 0)
 	fmt.Println("DISCONNECTED AT ", time.Now().Format(time.RFC1123))
 }

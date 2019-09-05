@@ -14,13 +14,8 @@ import (
 
 func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd) {
 
-	row := b.db.QueryRow("SELECT banlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-	dg := DiscordGuild{}
-	err := row.Scan(&dg.BanLog)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	dg := Guild{}
+	b.db.Get(&dg, "SELECT ban_log FROM guilds WHERE id=$1;", m.GuildID)
 	if dg.BanLog == "" {
 		return
 	}
@@ -59,6 +54,12 @@ func (b *Bot) guildBanAddHandler(s *discordgo.Session, m *discordgo.GuildBanAdd)
 	_, err = b.loggerDB.GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
 	if err != nil {
 		embed.Title += " - Hackban"
+
+		_, err = s.ChannelMessageSendEmbed(dg.BanLog, &embed)
+		if err != nil {
+			b.logger.Info("error", zap.Error(err))
+			fmt.Println("BAN LOG ERROR", err)
+		}
 	} else {
 
 		messagelog, err := b.loggerDB.GetMessageLog(m)

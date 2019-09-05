@@ -11,12 +11,15 @@ import (
 
 	"go.uber.org/zap"
 
+	_ "net/http/pprof"
+
 	"github.com/intrntsrfr/functional-logger/loggerbot"
 	"github.com/intrntsrfr/functional-logger/loggerdb"
 	_ "github.com/lib/pq"
 )
 
 func main() {
+
 	jeff := zap.NewDevelopmentConfig()
 	jeff.OutputPaths = []string{"./logs.txt"}
 	jeff.ErrorOutputPaths = []string{"./logs.txt"}

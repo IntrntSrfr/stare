@@ -10,13 +10,13 @@ import (
 
 func (b *Bot) messageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
 
-	row := b.db.QueryRow("SELECT msgeditlog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-	dg := DiscordGuild{}
-	err := row.Scan(&dg.MsgEditLog)
+	dg := Guild{}
+	err := b.db.Get(&dg, "SELECT msg_edit_log FROM guilds WHERE id=$1;", m.GuildID)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+
 	if dg.MsgEditLog == "" {
 		return
 	}

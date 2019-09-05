@@ -31,9 +31,7 @@ func NewDB(zlog *zap.Logger) (*DB, error) {
 
 	os.MkdirAll("./data", 0750)
 
-	opts := badger.DefaultOptions
-	opts.Dir = "./data"
-	opts.ValueDir = "./data"
+	opts := badger.DefaultOptions("./data")
 	opts.Truncate = true
 	opts.ValueLogLoadingMode = options.FileIO
 	opts.NumVersionsToKeep = 1
@@ -67,18 +65,17 @@ func (db *DB) LoadTotal() error {
 
 		msgs, err := txn.Get([]byte("TotalMessages"))
 		if err != nil {
-			db.log.Info("error", zap.Error(err))
 			return err
 		}
 		msgBody, err = msgs.ValueCopy(nil)
 		if err != nil {
-			db.log.Info("error", zap.Error(err))
 			return err
 		}
 
 		return nil
 	})
 	if err != nil {
+		db.log.Info("error", zap.Error(err))
 		return err
 	}
 
@@ -174,7 +171,12 @@ func (db *DB) SetMessage(m *discordgo.Message) error {
 	}
 
 	err = db.db.Update(func(txn *badger.Txn) error {
-		return txn.SetWithTTL([]byte(fmt.Sprintf("message:%v:%v:%v", m.GuildID, m.ChannelID, m.ID)), buf.Bytes(), time.Hour*24)
+		e := badger.Entry{
+			Key:       []byte(fmt.Sprintf("message:%v:%v:%v", m.GuildID, m.ChannelID, m.ID)),
+			Value:     buf.Bytes(),
+			ExpiresAt: uint64(time.Now().Add(time.Hour * 24).Unix()),
+		}
+		return txn.SetEntry(&e)
 	})
 	return err
 }
@@ -258,67 +260,3 @@ func (db *DB) RunGC() error {
 	fmt.Println("running gc")
 	return db.db.RunValueLogGC(0.5)
 }
-
-/*
-func (db *DB) RunGC() error {
-	err := db.db.View(func(txn *badger.Txn) error {
-		ts := time.Now()
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		prefix := []byte(fmt.Sprintf("message:"))
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-
-			body, err := item.ValueCopy(nil)
-			if err != nil {
-				db.log.Info("error", zap.Error(err))
-				continue
-			}
-
-			msg := &DMsg{}
-			err = gob.NewDecoder(bytes.NewReader(body)).Decode(msg)
-			if err != nil {
-				db.log.Info("error", zap.Error(err))
-				continue
-			}
-
-			msgid, err := strconv.ParseInt(msg.Message.ID, 10, 0)
-			if err != nil {
-				db.log.Info("error", zap.Error(err))
-				continue
-			}
-			msgts := ((msgid >> 22) + 1420070400000) / 1000
-
-			dayAgo := ts.Unix() - int64((time.Hour * 24).Seconds())
-			if msgts < dayAgo {
-				fmt.Println(msg.Message.Content)
-				err = db.db.Update(func(txn *badger.Txn) error {
-					return txn.Delete(item.Key())
-				})
-				if err != nil {
-					fmt.Println(err)
-				}
-
-					//awa := txn.Delete(item.Key())
-					//txn.Commit()
-
-			}
-		}
-
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-		again:
-			err := db.db.RunValueLogGC(0.01)
-			fmt.Println("gamer")
-			if err == nil {
-				goto again
-			}
-		}
-		return nil
-	})
-
-	return err
-}
-*/

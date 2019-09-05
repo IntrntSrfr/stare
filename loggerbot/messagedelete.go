@@ -11,13 +11,8 @@ import (
 
 func (b *Bot) messageDeleteHandler(s *discordgo.Session, m *discordgo.MessageDelete) {
 
-	row := b.db.QueryRow("SELECT msgdeletelog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-	dg := DiscordGuild{}
-	err := row.Scan(&dg.MsgDeleteLog)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	dg := Guild{}
+	b.db.Get(&dg, "SELECT msg_delete_log FROM guilds WHERE id=$1;", m.GuildID)
 	if dg.MsgDeleteLog == "" {
 		return
 	}

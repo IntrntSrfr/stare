@@ -11,13 +11,8 @@ import (
 
 func (b *Bot) guildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
 
-	row := b.db.QueryRow("SELECT leavelog FROM discordguilds WHERE guildid=$1;", m.GuildID)
-	dg := DiscordGuild{}
-	err := row.Scan(&dg.LeaveLog)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	dg := Guild{}
+	b.db.Get(&dg, "SELECT leave_log FROM guilds WHERE id=$1;", m.GuildID)
 	if dg.LeaveLog == "" {
 		return
 	}
