@@ -1,6 +1,6 @@
 # Discord logger for some events
-### Now works for several servers.
 
+`config.json`
 
 | Key         | Value             |
 |-------------|-------------------|

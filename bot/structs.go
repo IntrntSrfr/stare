@@ -1,17 +1,22 @@
-package loggerbot
+package bot
 
+import "github.com/bwmarrin/discordgo"
+
+/*
 type Config struct {
 	Token            string `json:"token"`
 	ConnectionString string `json:"connection_string"`
 	OwoAPIKey        string `json:"owo_api_key"`
-}
+} */
+
+type Color int
 
 const (
-	dColorRed    = 13107200
-	dColorOrange = 15761746
-	dColorLBlue  = 6410733
-	dColorGreen  = 51200
-	dColorWhite  = 16777215
+	Red    Color = 0xC80000
+	Orange       = 0xF08152
+	Blue         = 0x61D1ED
+	Green        = 0x00C800
+	White        = 0xFFFFFF
 )
 
 type Guild struct {
@@ -35,3 +40,21 @@ CREATE TABLE IF NOT EXISTS guilds (
 	leave_log      text
 );
 `
+
+type DiscordMessage struct {
+	Message     *discordgo.Message
+	Attachments [][]byte
+}
+type ByID []*DiscordMessage
+
+func (m ByID) Len() int {
+	return len(m)
+}
+
+func (m ByID) Less(i, j int) bool {
+	return m[i].Message.ID < m[j].Message.ID
+}
+
+func (m ByID) Swap(i, j int) {
+	m[i], m[j] = m[j], m[i]
+}
