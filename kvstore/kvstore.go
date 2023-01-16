@@ -155,7 +155,8 @@ func (s *Store) GetMessageLog(m *discordgo.GuildBanAdd) ([]*DiscordMessage, erro
 	var messages []*DiscordMessage
 	err := s.db.View(func(txn *badger.Txn) error {
 		ts := time.Now()
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		opts := badger.DefaultIteratorOptions
+		it := txn.NewIterator(opts)
 		defer it.Close()
 
 		// surely this can be changed to msg:guild:user

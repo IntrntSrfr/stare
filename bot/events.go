@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/dgraph-io/badger"
+	"github.com/intrntsrfr/functional-logger/kvstore"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -291,33 +293,28 @@ func (b *Bot) guildMemberAddHandler(s *discordgo.Session, m *discordgo.GuildMemb
 }
 
 func (b *Bot) guildMemberRemoveHandler(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
-
-	dg := Guild{}
-	b.db.Get(&dg, "SELECT leave_log FROM guilds WHERE id=$1;", m.GuildID)
-	if dg.LeaveLog == "" {
+	gc, err := b.db.GetGuild(m.GuildID)
+	if gc.LeaveLog == "" {
 		return
 	}
 
-	roles := []string{}
-
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
-		b.log.Info("error", zap.Error(err))
 		return
 	}
 
 	mem, err := b.store.GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
 	if err != nil {
-		b.log.Info("error", zap.Error(err))
 		return
 	}
 
+	var roles []string
 	for _, r := range mem.Roles {
 		roles = append(roles, fmt.Sprintf("<@&%v>", r))
 	}
 
 	embed := discordgo.MessageEmbed{
-		Color: int(Orange),
+		Color: Orange,
 		Title: "User left or kicked",
 		Thumbnail: &discordgo.MessageEmbedThumbnail{
 			URL: m.User.AvatarURL("256"),
@@ -377,7 +374,7 @@ func (b *Bot) guildMembersChunkHandler(s *discordgo.Session, g *discordgo.GuildM
 	go func() {
 		for _, mem := range g.Members {
 
-			err := b.store.SetMember(mem, 1)
+			err := b.store.SetMember(mem)
 			if err != nil {
 				b.log.Error("error", zap.Error(err))
 				continue
@@ -398,7 +395,7 @@ func (b *Bot) guildMembersChunkHandler(s *discordgo.Session, g *discordgo.GuildM
 
 func (b *Bot) guildMemberUpdateHandler(s *discordgo.Session, m *discordgo.GuildMemberUpdate) {
 
-	err := b.store.SetMember(m.Member, 0)
+	err := b.store.SetMember(m.Member)
 	if err != nil {
 		fmt.Println(err)
 		b.log.Info("error", zap.Error(err))
@@ -413,37 +410,34 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 
 	g, err := s.State.Guild(m.GuildID)
 	if err != nil {
-		b.log.Info("error", zap.Error(err))
-		fmt.Println(err)
 		return
 	}
 
 	ch, err := s.State.Channel(m.ChannelID)
 	if err != nil {
-		b.log.Info("error", zap.Error(err))
-		fmt.Println(err)
-		return
-	}
-	if ch.Type != discordgo.ChannelTypeGuildText {
 		return
 	}
 
-	//fmt.Println(fmt.Sprintf("%v - %v - %v: %v", g.Name, ch.Name, m.Author.String(), m.Content))
+	// max size 10mb
+	b.store.SetMessage(kvstore.NewDiscordMessage(m.Message, 1024*1024*10))
 
-	go b.store.SetMessage(m.Message)
-	/*
-		err = loggerDB.SetMessage(m.Message)
-		if err != nil {
-			fmt.Println("MESSAGE CREATE ERROR", err)
-			return
-		}
-	*/
-	if strings.HasPrefix(m.Content, "fl.len") {
-		s.ChannelMessageSend(ch.ID, fmt.Sprintf("messages: %v", b.store.TotalMessages))
-	} else if strings.HasPrefix(m.Content, "fl.mlen") {
-		s.ChannelMessageSend(ch.ID, fmt.Sprintf("members: %v", b.store.TotalMembers))
-	} else if strings.HasPrefix(m.Content, "fl.uptime") {
-		s.ChannelMessageSend(ch.ID, fmt.Sprintf("%v", fmt.Sprintf("Uptime: %v", time.Since(b.startTime).Round(time.Second).String())))
+	if strings.HasPrefix(m.Content, "fl.info") {
+		_, _ = s.ChannelMessageSendEmbed(m.ChannelID, &discordgo.MessageEmbed{
+			Title:       "Info",
+			Description: fmt.Sprintf("Golang version: %v", runtime.Version()),
+			Color:       Blue,
+			Fields: []*discordgo.MessageEmbedField{
+				{
+					Name:  "Golang version",
+					Value: runtime.Version(),
+				},
+				{
+					Name:  "Running since",
+					Value: fmt.Sprintf("<t:%v:R>", b.startTime.Unix()),
+				},
+			},
+		})
+		return
 	}
 
 	args := strings.Split(m.Content, " ")
@@ -510,26 +504,21 @@ func (b *Bot) messageCreateHandler(s *discordgo.Session, m *discordgo.MessageCre
 		case "unban":
 			b.db.Exec("UPDATE Guilds SET unbanlog=$1 WHERE guildid=$2", channel.ID, g.ID)
 			s.ChannelMessageSend(ch.ID, fmt.Sprintf("Set unban logs to %v.", channel.Mention()))
-
-		default:
-			s.ChannelMessageSend(ch.ID, "Please choose a valid log type.")
 		}
 	} else if args[0] == "fl.help" {
-
 		text := strings.Builder{}
 		text.WriteString("To set a log channel, do `fl.set <logtype> <channel>`, where channel is optional.\n")
 		text.WriteString("Log types:\n")
-		text.WriteString("Join - When a user joins the server\n")
-		text.WriteString("Leave - When a user leaves the server\n")
-		text.WriteString("Msgdelete - When a message is deleted\n")
-		text.WriteString("Msgedit - When a message is edited\n")
-		text.WriteString("Ban - When a user got banned\n")
-		text.WriteString("Unban - When a user got unbanned\n")
+		text.WriteString("`join` - When a user joins the server\n")
+		text.WriteString("`leave` - When a user leaves the server\n")
+		text.WriteString("`msgdelete` - When a message is deleted\n")
+		text.WriteString("`msgedit` - When a message is edited\n")
+		text.WriteString("`ban` - When a user got banned\n")
+		text.WriteString("`unban` - When a user got unbanned\n")
 		text.WriteString("\n")
 		text.WriteString("Example - fl.set join\n")
 		text.WriteString("Example - fl.set join #join-logs\n")
 		text.WriteString("Example - fl.set join 1234123412341234\n")
-
 		s.ChannelMessageSend(ch.ID, text.String())
 	}
 
