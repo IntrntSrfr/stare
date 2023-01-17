@@ -48,6 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open database connection: %v", err)
 	}
+	defer psql.Close()
 
 	owoCl := owo.NewClient(config.OwoAPIKey)
 	store, err := kvstore.NewStore(logger.Named("store"))

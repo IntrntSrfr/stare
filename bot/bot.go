@@ -1,8 +1,8 @@
 package bot
 
 import (
-	"fmt"
 	"github.com/intrntsrfr/functional-logger/database"
+	"github.com/intrntsrfr/functional-logger/discord"
 	"github.com/intrntsrfr/functional-logger/kvstore"
 	"time"
 
@@ -17,6 +17,7 @@ type Bot struct {
 	store     *kvstore.Store
 	log       *zap.Logger
 	db        database.DB
+	disc      *discord.Discord
 	sess      *discordgo.Session
 	config    *Config
 	owo       *owo.Client
@@ -32,7 +33,6 @@ type Config struct {
 }
 
 func NewBot(c *Config) (*Bot, error) {
-
 	b := &Bot{
 		store:     c.Store,
 		log:       c.Log,
@@ -42,41 +42,57 @@ func NewBot(c *Config) (*Bot, error) {
 		startTime: time.Now(),
 	}
 
-	s, err := discordgo.New("Bot " + c.Token)
+	disc, err := discord.NewDiscord(c.Token, c.Log)
 	if err != nil {
-		fmt.Println(err)
 		return nil, err
 	}
-	b.sess = s
-
+	b.disc = disc
+	b.sess = disc.Sess
+	/*
+		disc.AddHandler(b.guildCreateHandler)
+		disc.AddHandler(b.guildMemberUpdateHandler)
+		disc.AddHandler(b.guildMemberAddHandler)
+		disc.AddHandler(b.guildMemberRemoveHandler)
+		disc.AddHandler(b.guildMembersChunkHandler)
+		disc.AddHandler(b.guildBanAddHandler)
+		disc.AddHandler(b.guildBanRemoveHandler)
+		disc.AddHandler(b.messageCreateHandler)
+		disc.AddHandler(b.messageUpdateHandler)
+		disc.AddHandler(b.messageDeleteHandler)
+		disc.AddHandler(b.messageDeleteBulkHandler)
+		disc.AddHandler(b.readyHandler)
+		disc.AddHandler(b.disconnectHandler)
+	*/
 	return b, nil
 }
 
 func (b *Bot) Close() {
-	b.log.Info("Shutting down bot.")
-	b.db.Close()
-	b.sess.Close()
+	b.disc.Close()
 }
 
 func (b *Bot) Run() error {
+	go b.listen(b.disc.Events)
 
-	b.addHandlers()
-	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
-	return b.sess.Open()
+	err := b.disc.Open()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (b *Bot) addHandlers() {
-	b.sess.AddHandler(b.guildCreateHandler)
-	b.sess.AddHandler(b.guildMemberUpdateHandler)
-	b.sess.AddHandler(b.guildMemberAddHandler)
-	b.sess.AddHandler(b.guildMemberRemoveHandler)
-	b.sess.AddHandler(b.guildMembersChunkHandler)
-	b.sess.AddHandler(b.guildBanAddHandler)
-	b.sess.AddHandler(b.guildBanRemoveHandler)
-	b.sess.AddHandler(b.messageCreateHandler)
-	b.sess.AddHandler(b.messageUpdateHandler)
-	b.sess.AddHandler(b.messageDeleteHandler)
-	b.sess.AddHandler(b.messageDeleteBulkHandler)
-	b.sess.AddHandler(b.readyHandler)
-	b.sess.AddHandler(b.disconnectHandler)
+func (b *Bot) listen(evtCh <-chan interface{}) {
+	for {
+		evt := <-evtCh
+
+		switch evt.(type) {
+		case *discordgo.MessageCreate:
+			m, _ := evt.(*discordgo.MessageCreate)
+			b.log.Info("new message", zap.String("content", m.Content))
+
+		}
+	}
+}
+
+func handleMessageCreate() {
+
 }

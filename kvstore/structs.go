@@ -1,9 +1,10 @@
 package kvstore
 
 import (
-	"github.com/bwmarrin/discordgo"
 	"io"
 	"net/http"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type DiscordMessage struct {

@@ -129,12 +129,12 @@ func (s *Store) GetMessage(key string) (*DiscordMessage, error) {
 	err := s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte("message:" + key))
 		if err != nil {
-			s.log.Info("failed to lookup message", zap.Error(err))
+			s.log.Error("failed to lookup message", zap.Error(err))
 			return err
 		}
 		body, err = item.ValueCopy(nil)
 		if err != nil {
-			s.log.Info("error", zap.Error(err))
+			s.log.Error("error", zap.Error(err))
 			return err
 		}
 		return nil
@@ -145,7 +145,7 @@ func (s *Store) GetMessage(key string) (*DiscordMessage, error) {
 	msg := DiscordMessage{}
 	err = gob.NewDecoder(bytes.NewReader(body)).Decode(&msg)
 	if err != nil {
-		s.log.Info("failed to decode message", zap.Error(err))
+		s.log.Error("failed to decode message", zap.Error(err))
 		return nil, err
 	}
 	return &msg, nil
@@ -168,13 +168,13 @@ func (s *Store) GetMessageLog(m *discordgo.GuildBanAdd) ([]*DiscordMessage, erro
 
 			body, err := item.ValueCopy(nil)
 			if err != nil {
-				s.log.Info("error", zap.Error(err))
+				s.log.Error("error", zap.Error(err))
 				continue
 			}
 			msg := DiscordMessage{}
 			err = gob.NewDecoder(bytes.NewReader(body)).Decode(&msg)
 			if err != nil {
-				s.log.Info("error", zap.Error(err))
+				s.log.Error("error", zap.Error(err))
 				continue
 			}
 
@@ -182,7 +182,7 @@ func (s *Store) GetMessageLog(m *discordgo.GuildBanAdd) ([]*DiscordMessage, erro
 
 				msgid, err := strconv.ParseInt(msg.Message.ID, 10, 0)
 				if err != nil {
-					s.log.Info("error", zap.Error(err))
+					s.log.Error("error", zap.Error(err))
 					continue
 				}
 				msgts := ((msgid >> 22) + 1420070400000) / 1000
