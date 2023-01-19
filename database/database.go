@@ -15,8 +15,8 @@ type DB interface {
 }
 
 type Config struct {
-	log     *zap.Logger
-	connStr string
+	Log     *zap.Logger
+	ConnStr string
 }
 
 type PsqlDB struct {
@@ -27,8 +27,8 @@ type PsqlDB struct {
 
 func NewDatabase(c *Config) (*PsqlDB, error) {
 	db := &PsqlDB{
-		log:     c.log,
-		connStr: c.connStr,
+		log:     c.Log,
+		connStr: c.ConnStr,
 	}
 
 	pool, err := sqlx.Connect("postgres", db.connStr)

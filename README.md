@@ -10,7 +10,7 @@
 
 idk yet im working on it.
 
-A `config.json` file is required, make sure it's put wherever its being ran from.
+A `config.json` file is required, make sure it's put wherever its being run from.
 
 | Key               | Value                        |
 |-------------------|------------------------------|

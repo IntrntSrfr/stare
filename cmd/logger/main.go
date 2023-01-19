@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/intrntsrfr/functional-logger/database"
 	"github.com/intrntsrfr/functional-logger/kvstore"
 	"log"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"github.com/intrntsrfr/functional-logger/bot"
 	"github.com/intrntsrfr/owo"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 )
@@ -44,10 +44,10 @@ func main() {
 	}
 	defer logger.Sync()
 
-	psql, err := sqlx.Connect("postgres", config.ConnectionString)
-	if err != nil {
-		log.Fatalf("failed to open database connection: %v", err)
-	}
+	psql, err := database.NewDatabase(&database.Config{
+		Log:     logger.Named("database"),
+		ConnStr: config.ConnectionString,
+	})
 	defer psql.Close()
 
 	owoCl := owo.NewClient(config.OwoAPIKey)
@@ -60,7 +60,7 @@ func main() {
 	// bot
 	client, err := bot.NewBot(&bot.Config{
 		Store: store,
-		Log:   logger.Named("discord"),
+		Log:   logger.Named("bot"),
 		DB:    psql,
 		Owo:   owoCl,
 		Token: config.Token,

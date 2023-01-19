@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/intrntsrfr/functional-logger/bot"
 	"go.uber.org/zap"
 	"log"
@@ -54,11 +53,4 @@ func main() {
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 	<-sc
-}
-
-func listen(ch <-chan interface{}) {
-	for {
-		evt := <-ch
-		fmt.Println(evt)
-	}
 }
