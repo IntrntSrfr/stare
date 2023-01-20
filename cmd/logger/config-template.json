@@ -1,10 +1,5 @@
 {
-    "token": "1234123412341234",
-    "owo_api_key": "1234123412341234",
-    "msg_edit": "1234123412341234",
-    "msg_delete": "1234123412341234",
-    "ban": "1234123412341234",
-    "unban": "1234123412341234",
-    "join": "1234123412341234",
-    "leave": "1234123412341234"
+    "token": "DISCORD BOT TOKEN",
+    "connection_string": "DATABASE CONNECTION STRING",
+    "owo_api_key": "OWO.SH API KEY"
 }
