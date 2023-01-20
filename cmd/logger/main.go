@@ -44,10 +44,10 @@ func main() {
 	}
 	defer logger.Sync()
 
-	psql, err := database.NewDatabase(&database.Config{
-		Log:     logger.Named("database"),
-		ConnStr: config.ConnectionString,
-	})
+	psql, err := database.NewJsonDatabase("./data.json")
+	if err != nil {
+		log.Fatalf("failed to open DB connection: %v", err)
+	}
 	defer psql.Close()
 
 	owoCl := owo.NewClient(config.OwoAPIKey)

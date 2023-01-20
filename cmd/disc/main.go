@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"github.com/intrntsrfr/functional-logger/bot"
+	"github.com/intrntsrfr/functional-logger/database"
 	"go.uber.org/zap"
 	"log"
 	"os"
@@ -35,10 +36,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	db, err := database.NewJsonDatabase("./data")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	b, err := bot.NewBot(&bot.Config{
 		Store: nil,
 		Log:   z.Named("bot"),
-		DB:    nil,
+		DB:    db,
 		Owo:   nil,
 		Token: config.Token,
 	})

@@ -1,10 +1,5 @@
 package bot
 
-import (
-	"github.com/bwmarrin/discordgo"
-	"github.com/intrntsrfr/functional-logger/database"
-)
-
 type Color int
 
 const (
@@ -14,9 +9,3 @@ const (
 	Green        = 0x00C800
 	White        = 0xFFFFFF
 )
-
-type Context struct {
-	b  *Bot
-	s  *discordgo.Session
-	gc *database.Guild
-}

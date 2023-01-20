@@ -9,7 +9,7 @@ import (
 func TrimChannelString(chStr string) string {
 	chStr = strings.TrimPrefix(chStr, "<#")
 	chStr = strings.TrimSuffix(chStr, ">")
-	return ""
+	return chStr
 }
 
 func ParseSnowflake(id string) (time.Time, error) {

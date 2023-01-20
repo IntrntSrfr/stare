@@ -1,7 +1,10 @@
-logs.txt
-config.json
 *.zip
 .idea
-/data
+data
+
+*.json
+!*template.json
+
+*.txt
+
 *.exe
-functional-logger

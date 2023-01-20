@@ -53,10 +53,12 @@ func NewBot(c *Config) (*Bot, error) {
 }
 
 func (b *Bot) Close() {
+	b.log.Info("stopping bot")
 	b.disc.Close()
 }
 
 func (b *Bot) Run() error {
+	b.log.Info("starting bot")
 	go b.listen(b.disc.Events)
 
 	err := b.disc.Open()
@@ -70,9 +72,9 @@ func (b *Bot) listen(evtCh <-chan interface{}) {
 	for {
 		evt := <-evtCh
 		ctx := &Context{
-			b:  b,
-			s:  b.sess,
-			gc: nil,
+			b: b,
+			s: b.sess,
+			d: b.disc,
 		}
 
 		if e, ok := evt.(*discordgo.Ready); ok {
@@ -86,13 +88,15 @@ func (b *Bot) listen(evtCh <-chan interface{}) {
 						continue
 					}
 					ctx.gc = gc
-				} else if e, ok := evt.(*discordgo.MessageDelete); ok {
-					gc, err := b.db.GetGuild(e.GuildID)
-					if err != nil {
-						continue
-					}
-					ctx.gc = gc
-
+			*/
+		} else if e, ok := evt.(*discordgo.MessageDelete); ok {
+			gc, err := b.db.GetGuild(e.GuildID)
+			if err != nil {
+				continue
+			}
+			ctx.gc = gc
+			go messageDeleteHandler(ctx, e)
+			/*
 				} else if e, ok := evt.(*discordgo.MessageUpdate); ok {
 					gc, err := b.db.GetGuild(e.GuildID)
 					if err != nil {

@@ -34,18 +34,17 @@ func readyHandler(c *Context, r *discordgo.Ready) {
 	fmt.Println("Logged in as", r.User.String())
 }
 
-func disconnectHandler(c *Context, _ *discordgo.Disconnect) {
-	c.b.log.Info("disconnected")
+func disconnectHandler(_ *Context, _ *discordgo.Disconnect) {
 }
 
 func guildBanAddHandler(c *Context, m *discordgo.GuildBanAdd) {
 	g, err := c.s.State.Guild(m.GuildID)
 	if err != nil {
-		c.b.log.Info("failed to fetch guild", zap.Error(err))
+		c.b.log.Error("failed to fetch guild", zap.Error(err))
 		return
 	}
 
-	embed := discordgo.MessageEmbed{
+	embed := &discordgo.MessageEmbed{
 		Color: int(Red),
 		Title: "User banned",
 		Thumbnail: &discordgo.MessageEmbedThumbnail{
@@ -68,89 +67,57 @@ func guildBanAddHandler(c *Context, m *discordgo.GuildBanAdd) {
 		},
 	}
 
-	if _, err = c.b.store.GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID)); err != nil {
+	if _, err = c.b.store.GetMember(m.GuildID, m.User.ID); err != nil {
 		if err != badger.ErrKeyNotFound {
 			return
 		}
 		// if user is not found, aka they were never in the server
 		embed.Title += " - Hackban"
 
-		_, err = c.s.ChannelMessageSendEmbed(c.gc.BanLog, &embed)
+		_, err = c.s.ChannelMessageSendEmbed(c.gc.BanLog, embed)
 		if err != nil {
 			c.b.log.Info("failed to send log message", zap.Error(err))
 		}
 		return
 	}
 
-	messageLog, err := c.b.store.GetMessageLog(m)
-	if err != nil {
+	var files []*discordgo.File
+	for _, ch := range g.Channels {
+		chLog, err := c.b.store.GetMessageLog(g.ID, ch.ID, m.User.ID)
+		if err != nil || len(chLog) == 0 {
+			continue
+		}
+		sort.Sort(kvstore.ByID(chLog))
+
+		buf := &bytes.Buffer{}
+		buf.WriteString(fmt.Sprintf("Log for user: %v (%v); channel: %v (%v)\n", m.User, m.User.ID, ch.Name, ch.ID))
+		for _, msg := range chLog {
+			str := fmt.Sprintf("\nContent: %v\n", msg.Message.Content)
+			if len(msg.Attachments) > 0 {
+				str += "Message had attachment\n"
+			}
+			buf.WriteString(str)
+		}
+
+		files = append(files, &discordgo.File{
+			Name:   fmt.Sprintf("%v_%v_%v.txt", g.ID, ch.ID, m.User.ID),
+			Reader: nil,
+		})
+	}
+
+	if len(files) == 0 {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "24h user log",
+			Value: "No history",
+		})
+		_, _ = c.s.ChannelMessageSendEmbed(c.gc.BanLog, embed)
 		return
 	}
 
-	text := strings.Builder{}
-	sort.Sort(kvstore.ByID(messageLog))
-
-	for _, cmsg := range messageLog {
-		if cmsg.Message.Author.ID == m.User.ID {
-
-			ch, err := c.s.State.Channel(cmsg.Message.ChannelID)
-			if err != nil {
-				continue
-			}
-
-			if len(cmsg.Attachments) > 0 {
-				text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\nMessage had attachment\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content))
-			} else {
-				text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nChannel: %v (%v)\nContent: %v\n", cmsg.Message.Author.String(), cmsg.Message.Author.ID, ch.Name, ch.ID, cmsg.Message.Content))
-			}
-		}
-	}
-
-	if len(messageLog) > 0 {
-		if c.b.owo != nil {
-			link, err := c.b.owo.Upload(text.String())
-			if err != nil {
-				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-					Name:  "24h user log",
-					Value: "Error getting link",
-				})
-				c.b.log.Info("BAN LOG ERROR", zap.Error(err))
-			} else {
-				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-					Name:  "24h user log",
-					Value: "Link: " + link,
-				})
-			}
-
-			_, err = c.s.ChannelMessageSendEmbed(c.gc.BanLog, &embed)
-			if err != nil {
-				fmt.Println("BAN LOG ERROR", err)
-			}
-		} else {
-			buf := bytes.Buffer{}
-			buf.WriteString(text.String())
-
-			msg, err := c.s.ChannelMessageSendEmbed(c.gc.BanLog, &embed)
-			if err != nil {
-				fmt.Println("BAN LOG ERROR", err)
-			}
-
-			_, _ = c.s.ChannelMessageSendComplex(c.gc.BanLog, &discordgo.MessageSend{
-				Content: fmt.Sprintf("Log file for delete log message ID %v:", msg.ID),
-				File: &discordgo.File{
-					Name:   fmt.Sprintf("banlog_%v.txt", m.User.ID),
-					Reader: &buf,
-				},
-			})
-		}
-	} else {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "24h user log",
-			Value: "No history.",
-		})
-
-		_, _ = c.s.ChannelMessageSendEmbed(c.gc.BanLog, &embed)
-	}
+	_, _ = c.s.ChannelMessageSendComplex(c.gc.BanLog, &discordgo.MessageSend{
+		Embed: embed,
+		Files: files,
+	})
 }
 
 func guildBanRemoveHandler(c *Context, m *discordgo.GuildBanRemove) {
@@ -204,8 +171,6 @@ func guildCreateHandler(c *Context, g *discordgo.GuildCreate) {
 			continue
 		}
 	}
-
-	c.b.log.Info("guild created", zap.String("name", g.Name))
 }
 
 func guildMemberAddHandler(c *Context, m *discordgo.GuildMemberAdd) {
@@ -252,7 +217,7 @@ func guildMemberRemoveHandler(c *Context, m *discordgo.GuildMemberRemove) {
 		return
 	}
 
-	mem, err := c.b.store.GetMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
+	mem, err := c.b.store.GetMember(m.GuildID, m.User.ID)
 	if err != nil {
 		return
 	}
@@ -314,7 +279,7 @@ func guildMemberRemoveHandler(c *Context, m *discordgo.GuildMemberRemove) {
 
 	_, _ = c.s.ChannelMessageSendEmbed(c.gc.LeaveLog, &embed)
 
-	err = c.b.store.DeleteMember(fmt.Sprintf("%v:%v", m.GuildID, m.User.ID))
+	err = c.b.store.DeleteMember(m.GuildID, m.User.ID)
 	if err != nil {
 		c.b.log.Error("failed to delete member", zap.Error(err))
 	}
@@ -358,9 +323,8 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 
 	if strings.HasPrefix(m.Content, "fl.info") {
 		_, _ = c.s.ChannelMessageSendEmbed(m.ChannelID, &discordgo.MessageEmbed{
-			Title:       "Info",
-			Description: fmt.Sprintf("Golang version: %v", runtime.Version()),
-			Color:       Blue,
+			Title: "Info",
+			Color: Blue,
 			Fields: []*discordgo.MessageEmbedField{
 				{
 					Name:  "Golang version",
@@ -375,7 +339,7 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 		return
 	}
 
-	args := strings.Split(m.Content, " ")
+	args := strings.Fields(m.Content)
 	uperms, err := c.s.State.UserChannelPermissions(m.Author.ID, ch.ID)
 	if err != nil {
 		return
@@ -392,7 +356,7 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 			return
 		}
 
-		if uperms&discordgo.PermissionAdministrator == 0 {
+		if uperms&(discordgo.PermissionAdministrator|discordgo.PermissionAll) == 0 {
 			_, _ = c.s.ChannelMessageSend(ch.ID, "This is admin only, sorry!")
 			return
 		}
@@ -402,6 +366,7 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 			chStr := TrimChannelString(args[2])
 			setChannel, err = c.s.State.Channel(chStr)
 			if err != nil || setChannel.GuildID != g.ID {
+				c.b.log.Debug("failed to get guild", zap.Error(err))
 				return
 			}
 		}
@@ -446,25 +411,18 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 	}
 }
 
-/*
-func messageDeleteHandler(c*Context, m *discordgo.MessageDelete) {
-
-	gc, err := c.b.db.GetGuild(m.GuildID)
-	if err != nil || gc.MsgDeleteLog == "" {
-		return
-	}
-
-	msg, err := c.b.store.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
+func messageDeleteHandler(c *Context, m *discordgo.MessageDelete) {
+	msg, err := c.b.store.GetMessage(m.GuildID, m.ChannelID, m.ID)
 	if err != nil {
 		return
 	}
-	g, err := c.s.State.gc(m.GuildID)
+
+	g, err := c.s.State.Guild(m.GuildID)
 	if err != nil {
-	 	c.b.log.Info("error", zap.Error(err))
 		return
 	}
 
-	embed := discordgo.MessageEmbed{
+	embed := &discordgo.MessageEmbed{
 		Color: White,
 		Title: "Message deleted",
 		Fields: []*discordgo.MessageEmbedField{
@@ -490,28 +448,26 @@ func messageDeleteHandler(c*Context, m *discordgo.MessageDelete) {
 		},
 	}
 
-	if msg.Message.Content != "" {
-		content := ""
-		if len(msg.Message.Content) > 1024 {
-			link, err := c.b.owo.Upload(msg.Message.Content)
-			if err != nil {
-				content = "Content unavailable"
-			} else {
-				content = "Message too big for embed, have a link instead: " + link
-			}
-		} else {
-			content = msg.Message.Content
-		}
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Content",
-			Value: content,
-		})
-	} else {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Content",
-			Value: "No content",
-		})
+	contentField := &discordgo.MessageEmbedField{
+		Name:  "Content",
+		Value: "",
 	}
+	var files []*discordgo.File
+
+	if msg.Message.Content == "" {
+		contentField.Value = "No content"
+	} else {
+		str := msg.Message.Content
+		if len(str) > 1024 {
+			str = "Content too long, so it's put in the attached .txt file"
+			files = append(files, &discordgo.File{
+				Name:   "content.txt",
+				Reader: bytes.NewBufferString(msg.Message.Content),
+			})
+		}
+		contentField.Value = str
+	}
+	embed.Fields = append(embed.Fields, contentField)
 
 	if len(msg.Message.Attachments) > 0 {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
@@ -520,41 +476,20 @@ func messageDeleteHandler(c*Context, m *discordgo.MessageDelete) {
 		})
 	}
 
-	_, err = c.s.ChannelMessageSendEmbed(dg.MsgDeleteLog, &embed)
-	if err != nil {
-	 	c.b.log.Info("error", zap.Error(err))
-		fmt.Println("DELETE LOG ERROR", err)
+	for i, a := range msg.Message.Attachments {
+		files = append(files, &discordgo.File{
+			Name:   a.Filename,
+			Reader: bytes.NewReader(msg.Attachments[i]),
+		})
 	}
-	if len(msg.Message.Attachments) > 0 {
-		send, err := c.s.ChannelMessageSend(dg.MsgDeleteLog, "Trying to get attachments..")
-		if err != nil {
-		 	c.b.log.Info("error", zap.Error(err))
-			fmt.Println("DELETE LOG SEND ERROR", err)
-			return
-		}
 
-		data := &discordgo.MessageSend{
-			Content: fmt.Sprintf("File(s) attached to message ID: %v", m.ID),
-		}
-
-		for k, img := range msg.Attachments {
-			f := &discordgo.File{
-				Name:   msg.Message.Attachments[k].Filename,
-				Reader: bytes.NewReader(img),
-			}
-			data.Files = append(data.Files, f)
-		}
-
-		_, err = c.s.ChannelMessageSendComplex(dg.MsgDeleteLog, data)
-		if err != nil {
-		 	c.b.log.Info("error", zap.Error(err))
-			s.ChannelMessageEdit(send.ChannelID, send.ID, "Error getting attachments")
-			fmt.Println("DELETE LOG ERROR", err)
-		} else {
-			s.ChannelMessageDelete(send.ChannelID, send.ID)
-		}
-	}
+	_, _ = c.s.ChannelMessageSendComplex(c.gc.MsgDeleteLog, &discordgo.MessageSend{
+		Files: files,
+		Embed: embed,
+	})
 }
+
+/*
 
 func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
 
