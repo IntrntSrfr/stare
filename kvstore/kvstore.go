@@ -79,7 +79,9 @@ func (s *Store) GetMember(gid, uid string) (*discordgo.Member, error) {
 		}
 		return nil
 	}); err != nil {
-		s.log.Error("failed to read value", zap.Error(err))
+		if err != badger.ErrKeyNotFound {
+			s.log.Error("failed to read value", zap.Error(err))
+		}
 		return nil, err
 	}
 
@@ -130,7 +132,9 @@ func (s *Store) GetMessage(gid, cid, mid string) (*DiscordMessage, error) {
 		}
 		return nil
 	}); err != nil {
-		s.log.Error("failed to read message", zap.Error(err))
+		if err != badger.ErrKeyNotFound {
+			s.log.Error("failed to read message", zap.Error(err))
+		}
 		return nil, err
 	}
 

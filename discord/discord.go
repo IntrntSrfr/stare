@@ -2,7 +2,6 @@ package discord
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"net/http"
@@ -41,25 +40,10 @@ func NewDiscord(token string, log *zap.Logger) (*Discord, error) {
 		s.ShardCount = shardCount
 		s.ShardID = i
 		s.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsAllWithoutPrivileged | discordgo.IntentsGuildMembers | discordgo.IntentMessageContent)
-		/*
-			s.AddHandler(onGuildCreate(d.Events))
-			s.AddHandler(onGuildMemberUpdate(d.Events))
-			s.AddHandler(onGuildMemberAdd(d.Events))
-			s.AddHandler(onGuildMemberRemove(d.Events))
-			s.AddHandler(onGuildMembersChunk(d.Events))
-			s.AddHandler(onGuildBanAdd(d.Events))
-			s.AddHandler(onGuildBanRemove(d.Events))
-			s.AddHandler(onMessageCreate(d.Events))
-			s.AddHandler(onMessageUpdate(d.Events))
-			s.AddHandler(onMessageDelete(d.Events))
-			s.AddHandler(onMessageDeleteBulk(d.Events))
-			s.AddHandler(onReady(d.Events))
-			s.AddHandler(onDisconnect(d.Events))
-		*/
-		s.AddHandler(onEvent(d.Events))
 
+		s.AddHandler(onEvent(d.Events))
 		d.sessions = append(d.sessions, s)
-		fmt.Println("created session:", i)
+		log.Info("created new session", zap.Int("shard ID", i))
 	}
 	d.Sess = d.sessions[0]
 

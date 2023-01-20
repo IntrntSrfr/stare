@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/intrntsrfr/functional-logger/database"
 	"github.com/intrntsrfr/functional-logger/kvstore"
+	"go.uber.org/zap/zapcore"
 	"log"
 	"os"
 	"os/signal"
@@ -36,8 +37,9 @@ func main() {
 
 	// dependencies
 	z := zap.NewDevelopmentConfig()
-	z.OutputPaths = []string{"./logs.txt"}
-	z.ErrorOutputPaths = []string{"./logs.txt"}
+	z.OutputPaths = []string{"stdout", "./logs.txt"}
+	z.ErrorOutputPaths = []string{"stderr", "./logs.txt"}
+	z.Level.SetLevel(zapcore.WarnLevel)
 	logger, err := z.Build()
 	if err != nil {
 		log.Fatalf("failed to build logger: %v", err)

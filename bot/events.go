@@ -198,7 +198,7 @@ func guildMemberAddHandler(c *Context, m *discordgo.GuildMemberAdd) {
 			},
 			{
 				Name:  "Creation date",
-				Value: fmt.Sprintf("<t:%v:R>", ts),
+				Value: fmt.Sprintf("<t:%v:R>", ts.Unix()),
 			},
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
@@ -320,6 +320,9 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 
 	// max size 10mb
 	_ = c.b.store.SetMessage(kvstore.NewDiscordMessage(m.Message, 1024*1024*10))
+	if m.Content == "" {
+		return
+	}
 
 	if strings.HasPrefix(m.Content, "fl.info") {
 		_, _ = c.s.ChannelMessageSendEmbed(m.ChannelID, &discordgo.MessageEmbed{
@@ -489,23 +492,13 @@ func messageDeleteHandler(c *Context, m *discordgo.MessageDelete) {
 	})
 }
 
-/*
-
-func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
-
-	gc, err := c.b.db.GetGuild(m.GuildID)
-	if err != nil || gc.MsgDeleteLog == "" {
-		return
-	}
-
-	g, err := c.s.State.gc(m.GuildID)
+func messageDeleteBulkHandler(c *Context, m *discordgo.MessageDeleteBulk) {
+	g, err := c.d.Guild(m.GuildID)
 	if err != nil {
-	 	c.b.log.Info("error", zap.Error(err))
 		return
 	}
-	ts := time.Now()
 
-	embed := discordgo.MessageEmbed{
+	embed := &discordgo.MessageEmbed{
 		Color: White,
 		Title: fmt.Sprintf("Bulk message delete - (%v) messages deleted", len(m.Messages)),
 		Fields: []*discordgo.MessageEmbedField{
@@ -522,122 +515,64 @@ func (b *Bot) messageDeleteBulkHandler(s *discordgo.Session, m *discordgo.Messag
 		},
 	}
 
-	deletedmsgs := []*DiscordMessage{}
-	for _, msgid := range m.Messages {
-		delmsg, err := c.b.store.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, msgid))
+	var messages []*kvstore.DiscordMessage
+	for _, msgID := range m.Messages {
+		msg, err := c.b.store.GetMessage(m.GuildID, m.ChannelID, msgID)
 		if err != nil {
-		 	c.b.log.Info("error", zap.Error(err))
 			continue
 		}
-		deletedmsgs = append(deletedmsgs, delmsg)
+		messages = append(messages, msg)
 	}
+	sort.Sort(kvstore.ByID(messages))
 
-	sort.Sort(ByID(deletedmsgs))
-
-	text := strings.Builder{}
-	text.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, ts.Format(time.RFC1123)))
-
-	for _, msg := range deletedmsgs {
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, time.Now().Format(time.RFC3339)))
+	for _, msg := range messages {
+		text := fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
 		if len(msg.Attachments) > 0 {
-			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\nMessage had attachment\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
-		} else {
-			text.WriteString(fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content))
+			text += "Message had attachment\n"
 		}
+		builder.WriteString(text)
 	}
 
-	if c.b.owo != nil {
-		res, err := c.b.owo.Upload(text.String())
-
-		if err != nil {
-			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-				Name:  "Logged messages:",
-				Value: "Error getting link",
-			})
-		 	c.b.log.Info("BULK DELETE LOG ERROR", zap.Error(err))
-		} else {
-			embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-				Name:  "Logged messages:",
-				Value: "Link: " + res,
-			})
-		}
-		_, err = c.s.ChannelMessageSendEmbed(dg.MsgDeleteLog, &embed)
-		if err != nil {
-			fmt.Println("BULK DELETE LOG ERROR", err)
-		}
-	} else {
-		jeff := bytes.Buffer{}
-		jeff.WriteString(text.String())
-
-		msg, err := c.s.ChannelMessageSendEmbed(dg.MsgDeleteLog, &embed)
-		if err != nil {
-			fmt.Println("BULK DELETE LOG ERROR", err)
-		}
-
-		s.ChannelFileSendWithMessage(dg.MsgDeleteLog, fmt.Sprintf("Log file for delete log message ID %v:", msg.ID), "deletelog_"+m.ChannelID+".txt", &jeff)
-	}
+	_, _ = c.s.ChannelMessageSendComplex(c.gc.MsgDeleteLog, &discordgo.MessageSend{
+		File: &discordgo.File{
+			Name:        fmt.Sprintf("deleted_%v.txt", m.ChannelID),
+			ContentType: "builder/plain",
+			Reader:      bytes.NewBufferString(builder.String()),
+		},
+		Embed: embed,
+	})
 }
 
-func (b *Bot) messageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpdate) {
-
-	gc, err := c.b.db.GetGuild(m.GuildID)
-	if err != nil || gc.MsgEditLog == "" {
-		return
-	}
-
+func messageUpdateHandler(c *Context, m *discordgo.MessageUpdate) {
 	// This means it was an image update and not an actual edit
 	if m.Message.Content == "" {
 		return
 	}
 
-	g, err := c.s.State.gc(m.GuildID)
+	g, err := c.d.Guild(m.GuildID)
 	if err != nil {
-	 	c.b.log.Info("error", zap.Error(err))
+		c.b.log.Info("error", zap.Error(err))
 		return
 	}
 
-	oldm, err := c.b.store.GetMessage(fmt.Sprintf("%v:%v:%v", m.GuildID, m.ChannelID, m.ID))
+	oldMsg, err := c.b.store.GetMessage(m.GuildID, m.ChannelID, m.ID)
 	if err != nil {
 		return
 	}
 
-	oldmsg := oldm.Message
-
-	if oldmsg.Content == m.Content {
+	if oldMsg.Message.Content == m.Content {
 		return
 	}
 
-	oldc := ""
-	newc := ""
-
-	if len(m.Content) > 1024 {
-		link, err := c.b.owo.Upload(m.Content)
-		if err != nil {
-			newc = "Content unavailable"
-		} else {
-			newc = "Message too big for embed, have a link instead: " + link
-		}
-	} else {
-		newc = m.Content
-	}
-
-	if len(oldmsg.Content) > 1024 {
-		link, err := c.b.owo.Upload(oldmsg.Content)
-		if err != nil {
-			oldc = "Content unavailable"
-		} else {
-			oldc = "Message too big for embed, have a link instead: " + link
-		}
-	} else {
-		oldc = oldmsg.Content
-	}
-
-	embed := discordgo.MessageEmbed{
+	embed := &discordgo.MessageEmbed{
 		Color: int(Blue),
 		Title: "Message edited",
 		Fields: []*discordgo.MessageEmbedField{
 			{
 				Name:   "User",
-				Value:  fmt.Sprintf("%v\n%v\n%v", oldmsg.Author.Mention(), oldmsg.Author.String(), oldmsg.Author.ID),
+				Value:  fmt.Sprintf("%v\n%v\n%v", m.Author.Mention(), m.Author.String(), m.Author.ID),
 				Inline: true,
 			},
 			{
@@ -649,14 +584,6 @@ func (b *Bot) messageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpd
 				Name:  "Channel",
 				Value: fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID),
 			},
-			{
-				Name:  "Old content",
-				Value: oldc,
-			},
-			{
-				Name:  "New content",
-				Value: newc,
-			},
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
 		Footer: &discordgo.MessageEmbedFooter{
@@ -665,20 +592,42 @@ func (b *Bot) messageUpdateHandler(s *discordgo.Session, m *discordgo.MessageUpd
 		},
 	}
 
-	_, err = c.s.ChannelMessageSendEmbed(dg.MsgEditLog, &embed)
-	if err != nil {
-	 	c.b.log.Info("error", zap.Error(err))
-		fmt.Println("EDIT LOG ERROR", err)
+	var files []*discordgo.File
+	if len(oldMsg.Message.Content) > 1024 {
+		files = append(files, &discordgo.File{
+			Name:        "old_content.txt",
+			ContentType: "text/plain",
+			Reader:      bytes.NewBufferString(oldMsg.Message.Content),
+		})
+	} else {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Old content",
+			Value: oldMsg.Message.Content,
+		})
 	}
 
-	oldm.Message.Content = m.Content
+	if len(m.Content) > 1024 {
+		files = append(files, &discordgo.File{
+			Name:        "new_content.txt",
+			ContentType: "text/plain",
+			Reader:      bytes.NewBufferString(m.Content),
+		})
+	} else {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "New content",
+			Value: m.Content,
+		})
+	}
 
-	err = c.b.store.SetMessage(oldm.Message)
+	_, _ = c.s.ChannelMessageSendComplex(c.gc.MsgEditLog, &discordgo.MessageSend{
+		Files: files,
+		Embed: embed,
+	})
+
+	oldMsg.Message.Content = m.Content
+	err = c.b.store.SetMessage(oldMsg)
 	if err != nil {
-	 	c.b.log.Info("error", zap.Error(err))
-		fmt.Println("ERROR")
+		c.b.log.Error("failed to update message", zap.Error(err))
 		return
 	}
 }
-
-*/
