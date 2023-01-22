@@ -9,13 +9,13 @@ import (
 
 type DiscordMessage struct {
 	Message     *discordgo.Message
-	Attachments [][]byte
+	Attachments []*Attachment
 }
 
 func NewDiscordMessage(msg *discordgo.Message, maxSize int) *DiscordMessage {
 	m := &DiscordMessage{
 		Message:     msg,
-		Attachments: [][]byte{},
+		Attachments: []*Attachment{},
 	}
 
 	for _, a := range msg.Attachments {
@@ -28,7 +28,11 @@ func NewDiscordMessage(msg *discordgo.Message, maxSize int) *DiscordMessage {
 			continue
 		}
 
-		m.Attachments = append(m.Attachments, data)
+		m.Attachments = append(m.Attachments, &Attachment{
+			Filename: "",
+			Size:     a.Size,
+			Data:     data,
+		})
 	}
 	return m
 }
@@ -55,4 +59,10 @@ func (m ByID) Less(i, j int) bool {
 
 func (m ByID) Swap(i, j int) {
 	m[i], m[j] = m[j], m[i]
+}
+
+type Attachment struct {
+	Filename string
+	Size     int
+	Data     []byte
 }

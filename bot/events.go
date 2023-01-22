@@ -44,28 +44,13 @@ func guildBanAddHandler(c *Context, m *discordgo.GuildBanAdd) {
 		return
 	}
 
-	embed := &discordgo.MessageEmbed{
-		Color: int(Red),
-		Title: "User banned",
-		Thumbnail: &discordgo.MessageEmbedThumbnail{
-			URL: m.User.AvatarURL("256"),
-		},
-		Fields: []*discordgo.MessageEmbedField{
-			{
-				Name:  "User",
-				Value: fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()),
-			},
-			{
-				Name:  "ID",
-				Value: m.User.ID,
-			},
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-		Footer: &discordgo.MessageEmbedFooter{
-			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
-			Text:    g.Name,
-		},
+	embed := NewLogEmbed(GuildBanType, g)
+	embed.Thumbnail = &discordgo.MessageEmbedThumbnail{
+		URL: m.User.AvatarURL("256"),
 	}
+	embed = AddEmbedField(embed, "User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false)
+	embed = AddEmbedField(embed, "ID", m.User.ID, false)
+	reply := &discordgo.MessageSend{Embed: embed}
 
 	if _, err = c.b.store.GetMember(m.GuildID, m.User.ID); err != nil {
 		if err != badger.ErrKeyNotFound {
@@ -99,25 +84,16 @@ func guildBanAddHandler(c *Context, m *discordgo.GuildBanAdd) {
 			buf.WriteString(str)
 		}
 
-		files = append(files, &discordgo.File{
-			Name:   fmt.Sprintf("%v_%v_%v.txt", g.ID, ch.ID, m.User.ID),
-			Reader: nil,
-		})
+		reply = AddMessageFile(reply, fmt.Sprintf("%v_%v_%v.txt", g.ID, ch.ID, m.User.ID), buf.Bytes())
 	}
 
 	if len(files) == 0 {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "24h user log",
-			Value: "No history",
-		})
+		embed = AddEmbedField(embed, "24h user log", "No history", false)
 		_, _ = c.s.ChannelMessageSendEmbed(c.gc.BanLog, embed)
 		return
 	}
 
-	_, _ = c.s.ChannelMessageSendComplex(c.gc.BanLog, &discordgo.MessageSend{
-		Embed: embed,
-		Files: files,
-	})
+	_, _ = c.s.ChannelMessageSendComplex(c.gc.BanLog, reply)
 }
 
 func guildBanRemoveHandler(c *Context, m *discordgo.GuildBanRemove) {
@@ -126,29 +102,11 @@ func guildBanRemoveHandler(c *Context, m *discordgo.GuildBanRemove) {
 		return
 	}
 
-	embed := discordgo.MessageEmbed{
-		Color: Green,
-		Title: "User unbanned",
-		Thumbnail: &discordgo.MessageEmbedThumbnail{
-			URL: m.User.AvatarURL("256"),
-		},
-		Fields: []*discordgo.MessageEmbedField{
-			{
-				Name:  "User",
-				Value: fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()),
-			},
-			{
-				Name:  "ID",
-				Value: m.User.ID,
-			},
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-		Footer: &discordgo.MessageEmbedFooter{
-			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
-			Text:    g.Name,
-		},
-	}
-	_, _ = c.s.ChannelMessageSendEmbed(c.gc.UnbanLog, &embed)
+	embed := NewLogEmbed(GuildUnbanType, g)
+	embed = SetEmbedThumbnail(embed, m.User.AvatarURL("256"))
+	embed = AddEmbedField(embed, "User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false)
+	embed = AddEmbedField(embed, "ID", m.User.ID, false)
+	_, _ = c.s.ChannelMessageSendEmbed(c.gc.UnbanLog, embed)
 }
 
 func guildCreateHandler(c *Context, g *discordgo.GuildCreate) {
@@ -425,6 +383,7 @@ func messageDeleteHandler(c *Context, m *discordgo.MessageDelete) {
 		return
 	}
 
+	reply := &discordgo.MessageSend{}
 	embed := &discordgo.MessageEmbed{
 		Color: White,
 		Title: "Message deleted",
@@ -472,20 +431,16 @@ func messageDeleteHandler(c *Context, m *discordgo.MessageDelete) {
 	}
 	embed.Fields = append(embed.Fields, contentField)
 
-	if len(msg.Message.Attachments) > 0 {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Total attachments",
-			Value: fmt.Sprint(len(msg.Message.Attachments)),
-		})
+	if len(msg.Attachments) > 0 {
+		embed = AddEmbedField(embed, "Total attachments", fmt.Sprint(len(msg.Message.Attachments)), false)
 	}
 
-	for i, a := range msg.Message.Attachments {
-		files = append(files, &discordgo.File{
-			Name:   a.Filename,
-			Reader: bytes.NewReader(msg.Attachments[i]),
-		})
+	for _, a := range msg.Attachments {
+		reply = AddMessageFile(reply, a.Filename, a.Data)
 	}
 
+	reply.Embed = embed
+	_, _ = c.s.ChannelMessageSendComplex(c.gc.MsgDeleteLog, reply)
 	_, _ = c.s.ChannelMessageSendComplex(c.gc.MsgDeleteLog, &discordgo.MessageSend{
 		Files: files,
 		Embed: embed,
@@ -567,7 +522,7 @@ func messageUpdateHandler(c *Context, m *discordgo.MessageUpdate) {
 	}
 
 	embed := &discordgo.MessageEmbed{
-		Color: int(Blue),
+		Color: Blue,
 		Title: "Message edited",
 		Fields: []*discordgo.MessageEmbedField{
 			{

@@ -36,15 +36,7 @@ func NewStore(log *zap.Logger) (*Store, error) {
 	}
 	s.db = db
 
-	go func(s *Store) {
-		gcTimer := time.NewTicker(time.Hour)
-		for range gcTimer.C {
-			err := s.db.RunValueLogGC(0.5)
-			if err != nil {
-				s.log.Error("failed to run gc", zap.Error(err))
-			}
-		}
-	}(s)
+	go s.RunGC()
 
 	return s, nil
 }
@@ -189,9 +181,14 @@ func (s *Store) GetMessageLog(gid, cid, uid string) ([]*DiscordMessage, error) {
 	return messages, err
 }
 
-func (s *Store) RunGC() error {
-	fmt.Println("running gc")
-	return s.db.RunValueLogGC(0.5)
+func (s *Store) RunGC() {
+	gcTimer := time.NewTicker(time.Hour)
+	for range gcTimer.C {
+	gc:
+		if err := s.db.RunValueLogGC(0.5); err == nil {
+			goto gc
+		}
+	}
 }
 
 func ParseSnowflake(id string) (time.Time, error) {
