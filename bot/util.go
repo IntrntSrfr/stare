@@ -26,10 +26,13 @@ func NewLogEmbed(t LogType, g *discordgo.Guild) *discordgo.MessageEmbed {
 	e := &discordgo.MessageEmbed{
 		Fields:    []*discordgo.MessageEmbedField{},
 		Timestamp: time.Now().Format(time.RFC3339),
-		Footer: &discordgo.MessageEmbedFooter{
+	}
+
+	if g != nil {
+		e.Footer = &discordgo.MessageEmbedFooter{
 			IconURL: discordgo.EndpointGuildIcon(g.ID, g.Icon),
 			Text:    g.Name,
-		},
+		}
 	}
 
 	switch t {
@@ -55,7 +58,6 @@ func NewLogEmbed(t LogType, g *discordgo.Guild) *discordgo.MessageEmbed {
 		e.Title = "User unbanned"
 		e.Color = Green
 	}
-
 	return e
 }
 
