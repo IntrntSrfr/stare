@@ -36,8 +36,11 @@ func NewLogEmbed(t LogType, g *discordgo.Guild) *discordgo.MessageEmbed {
 	case MessageDeleteType:
 		e.Title = "Message deleted"
 		e.Color = White
+	case MessageDeleteBulkType:
+		e.Title = "Multiple messages deleted"
+		e.Color = White
 	case MessageUpdateType:
-		e.Title = "Message updated"
+		e.Title = "Message edited"
 		e.Color = Blue
 	case GuildJoinType:
 		e.Title = "User joined"

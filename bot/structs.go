@@ -12,6 +12,7 @@ type LogType int
 
 const (
 	MessageDeleteType LogType = 1 << iota
+	MessageDeleteBulkType
 	MessageUpdateType
 	GuildJoinType
 	GuildLeaveType
