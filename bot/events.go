@@ -3,14 +3,15 @@ package bot
 import (
 	"bytes"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
-	"github.com/dgraph-io/badger"
-	"github.com/intrntsrfr/functional-logger/kvstore"
-	"go.uber.org/zap"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/dgraph-io/badger"
+	"github.com/intrntsrfr/functional-logger/kvstore"
+	"go.uber.org/zap"
 )
 
 func readyHandler(c *Context, r *discordgo.Ready) {
@@ -139,7 +140,7 @@ func guildMemberAddHandler(c *Context, m *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	ts, err := ParseSnowflake(m.User.ID)
+	ts, _ := ParseSnowflake(m.User.ID)
 	embed := NewLogEmbed(GuildJoinType, g)
 	embed = SetEmbedThumbnail(embed, m.User.AvatarURL("256"))
 	embed = AddEmbedField(embed, "User", fmt.Sprintf("%v\n%v (%v)", m.User.Mention(), m.User.String(), m.User.ID), false)
@@ -314,7 +315,7 @@ func messageCreateHandler(c *Context, m *discordgo.MessageCreate) {
 		_, _ = c.s.ChannelMessageSend(ch.ID, "Updated config")
 	} else if args[0] == "fl.help" {
 		text := strings.Builder{}
-		text.WriteString("To set a log channel, do `fl.set [logtype] <channel>`, where channel is optional.\n")
+		text.WriteString("To set a log channel, do `fl.set [logtype] <channel>`, where channel is optional.\n\n")
 		text.WriteString("Logtypes:\n")
 		text.WriteString("`join` - When a user joins the server\n")
 		text.WriteString("`leave` - When a user leaves the server\n")
