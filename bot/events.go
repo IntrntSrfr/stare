@@ -407,7 +407,7 @@ func messageDeleteBulkHandler(c *Context, m *discordgo.MessageDeleteBulk) {
 
 func messageUpdateHandler(c *Context, m *discordgo.MessageUpdate) {
 	// This means it was an image update and not an actual edit
-	if m.Message.Content == "" {
+	if m.Author.Bot || m.Message.Content == "" {
 		return
 	}
 
