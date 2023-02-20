@@ -29,7 +29,7 @@ func NewDiscordMessage(msg *discordgo.Message, maxSize int) *DiscordMessage {
 		}
 
 		m.Attachments = append(m.Attachments, &Attachment{
-			Filename: "",
+			Filename: a.Filename,
 			Size:     a.Size,
 			Data:     data,
 		})
