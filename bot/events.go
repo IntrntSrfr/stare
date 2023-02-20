@@ -342,10 +342,11 @@ func messageDeleteHandler(c *Context, m *discordgo.MessageDelete) {
 		return
 	}
 
-	reply := &discordgo.MessageSend{Embed: NewLogEmbed(MessageDeleteType, g)}
-	reply.Embed = AddEmbedField(reply.Embed, "User", fmt.Sprintf("%v\n%v\n%v", msg.Message.Author.Mention(), msg.Message.Author.String(), msg.Message.Author.ID), true)
-	reply.Embed = AddEmbedField(reply.Embed, "Message ID", m.ID, true)
-	reply.Embed = AddEmbedField(reply.Embed, "Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false)
+	embed := NewLogEmbed(MessageDeleteType, g)
+	reply := &discordgo.MessageSend{Embed: embed}
+	AddEmbedField(embed, "User", fmt.Sprintf("%v\n%v\n%v", msg.Message.Author.Mention(), msg.Message.Author.String(), msg.Message.Author.ID), true)
+	AddEmbedField(embed, "Message ID", m.ID, true)
+	AddEmbedField(embed, "Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false)
 
 	contentStr := ""
 	if msg.Message.Content == "" {
@@ -354,19 +355,19 @@ func messageDeleteHandler(c *Context, m *discordgo.MessageDelete) {
 		str := msg.Message.Content
 		if len(str) > 1024 {
 			str = "Content too long, so it's put in the attached .txt file"
-			reply = AddMessageFileString(reply, "content.txt", msg.Message.Content)
+			AddMessageFileString(reply, "content.txt", msg.Message.Content)
 		}
 		contentStr = str
 	}
-	reply.Embed = AddEmbedField(reply.Embed, "Content", contentStr, false)
+	AddEmbedField(embed, "Content", contentStr, false)
 
 	if len(msg.Attachments) > 0 {
-		reply.Embed = AddEmbedField(reply.Embed, "Total fetched attachments", fmt.Sprint(len(msg.Attachments)), false)
-		reply.Embed = AddEmbedField(reply.Embed, "Disclaimer", "It may only fetch attachments smaller than 10mb", false)
+		AddEmbedField(embed, "Total fetched attachments", fmt.Sprint(len(msg.Attachments)), false)
+		embed.Description = "**Disclaimer:** Only attachments smaller than 10mb may be fetched"
 	}
 
 	for _, a := range msg.Attachments {
-		reply = AddMessageFile(reply, a.Filename, a.Data)
+		AddMessageFile(reply, a.Filename, a.Data)
 	}
 
 	_, _ = c.s.ChannelMessageSendComplex(c.gc.MsgDeleteLog, reply)
