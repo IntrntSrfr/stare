@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -14,6 +13,20 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/dgraph-io/badger"
 )
+
+func encodeGob(v interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	err := gob.NewEncoder(&buf).Encode(v)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func decodeGob(data []byte, v interface{}) error {
+	buffer := bytes.NewReader(data)
+	return gob.NewDecoder(buffer).Decode(v)
+}
 
 type Store struct {
 	db  *badger.DB
@@ -46,30 +59,32 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) SetMember(m *discordgo.Member) error {
-	var buf bytes.Buffer
-	err := gob.NewEncoder(&buf).Encode(m)
+	enc, err := encodeGob(m)
 	if err != nil {
 		s.log.Error("failed to encode member", zap.Error(err))
 		return err
 	}
 
+	key := fmt.Sprintf("member:%v:%v", m.GuildID, m.User.ID)
 	return s.db.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(fmt.Sprintf("member:%v:%v", m.GuildID, m.User.ID)), buf.Bytes())
+		return txn.Set([]byte(key), enc)
 	})
 }
 
 func (s *Store) GetMember(gid, uid string) (*discordgo.Member, error) {
-	var body []byte
+	var member discordgo.Member
+	key := fmt.Sprintf("member:%v:%v", gid, uid)
 	if err := s.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(fmt.Sprintf("member:%v:%v", gid, uid)))
+		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
 		}
-		body, err = item.ValueCopy(nil)
+
+		value, err := item.ValueCopy(nil)
 		if err != nil {
 			return err
 		}
-		return nil
+		return decodeGob(value, &member)
 	}); err != nil {
 		if err != badger.ErrKeyNotFound {
 			s.log.Error("failed to read value", zap.Error(err))
@@ -77,52 +92,50 @@ func (s *Store) GetMember(gid, uid string) (*discordgo.Member, error) {
 		return nil, err
 	}
 
-	mem := &discordgo.Member{}
-	err := gob.NewDecoder(bytes.NewReader(body)).Decode(mem)
-	if err != nil {
-		s.log.Error("failed to decode member", zap.Error(err))
-		return nil, err
-	}
-	return mem, nil
+	return &member, nil
 }
 
 func (s *Store) DeleteMember(gid, uid string) error {
+	key := fmt.Sprintf("member:%v:%v", gid, uid)
 	return s.db.Update(func(txn *badger.Txn) error {
-		return txn.Delete([]byte(fmt.Sprintf("member:%v:%v", gid, uid)))
+		return txn.Delete([]byte(key))
 	})
 }
 
 func (s *Store) SetMessage(msg *DiscordMessage) error {
-	var buf bytes.Buffer
-	err := gob.NewEncoder(&buf).Encode(msg)
+	messageKey := fmt.Sprintf("message:%s:%s:%s", msg.Message.GuildID, msg.Message.ChannelID, msg.Message.ID)
+	enc, err := encodeGob(msg)
 	if err != nil {
-		s.log.Error("failed to encode message", zap.Error(err))
-		return err
+		return fmt.Errorf("failed to encode DiscordMessage: %w", err)
 	}
 
-	err = s.db.Update(func(txn *badger.Txn) error {
-		e := &badger.Entry{
-			Key:       []byte(fmt.Sprintf("message:%v:%v:%v", msg.Message.GuildID, msg.Message.ChannelID, msg.Message.ID)),
-			Value:     buf.Bytes(),
-			ExpiresAt: uint64(time.Now().Add(time.Hour * 24).Unix()),
+	indexKey := fmt.Sprintf("index:%s:%s:%s:%s", msg.Message.GuildID, msg.Message.Author.ID, msg.Message.Timestamp, msg.Message.ID)
+	indexValue := messageKey
+
+	return s.db.Update(func(txn *badger.Txn) error {
+		entry := badger.NewEntry([]byte(messageKey), enc).WithTTL(24 * time.Hour)
+		if err := txn.SetEntry(entry); err != nil {
+			return err
 		}
-		return txn.SetEntry(e)
+
+		indexEntry := badger.NewEntry([]byte(indexKey), []byte(indexValue)).WithTTL(24 * time.Hour)
+		return txn.SetEntry(indexEntry)
 	})
-	return err
 }
 
 func (s *Store) GetMessage(gid, cid, mid string) (*DiscordMessage, error) {
-	var body []byte
+	var message DiscordMessage
+	key := fmt.Sprintf("message:%v:%v:%v", gid, cid, mid)
 	if err := s.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(fmt.Sprintf("message:%v:%v:%v", gid, cid, mid)))
+		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
 		}
-		body, err = item.ValueCopy(nil)
+		value, err := item.ValueCopy(nil)
 		if err != nil {
 			return err
 		}
-		return nil
+		return decodeGob(value, &message)
 	}); err != nil {
 		if err != badger.ErrKeyNotFound {
 			s.log.Error("failed to read message", zap.Error(err))
@@ -130,71 +143,63 @@ func (s *Store) GetMessage(gid, cid, mid string) (*DiscordMessage, error) {
 		return nil, err
 	}
 
-	msg := DiscordMessage{}
-	err := gob.NewDecoder(bytes.NewReader(body)).Decode(&msg)
-	if err != nil {
-		s.log.Error("failed to decode message", zap.Error(err))
-		return nil, err
-	}
-	return &msg, nil
+	return &message, nil
 }
 
-func (s *Store) GetMessageLog(gid, cid, uid string) ([]*DiscordMessage, error) {
+func (s *Store) GetMessageLog(gid, uid string) ([]*DiscordMessage, error) {
+	prefix := fmt.Sprintf("index:%v:%v:", gid, uid)
 	var messages []*DiscordMessage
 	err := s.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
-		// surely this can be changed to msg:guild:user
-		// this means the msg key needs to be changed as well
-		// probably to msg:guild:user:channel:msgID?
-		prefix := []byte(fmt.Sprintf("message:%v:%v", gid, cid))
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		for it.Seek([]byte(prefix)); it.ValidForPrefix([]byte(prefix)); it.Next() {
 			item := it.Item()
-
-			body, err := item.ValueCopy(nil)
+			var messageKey string
+			value, err := item.ValueCopy(nil)
 			if err != nil {
-				s.log.Error("error", zap.Error(err))
+				s.log.Error("failed to read value", zap.Error(err))
 				continue
 			}
-			msg := DiscordMessage{}
-			err = gob.NewDecoder(bytes.NewReader(body)).Decode(&msg)
-			if err != nil {
-				s.log.Error("error", zap.Error(err))
-				continue
-			}
+			messageKey = string(value)
 
-			if msg.Message.Author.ID == uid {
-				ts, err := ParseSnowflake(msg.Message.ID)
+			var message DiscordMessage
+			err = s.db.View(func(txn *badger.Txn) error {
+				item, err := txn.Get([]byte(messageKey))
 				if err != nil {
-					continue
+					return err
 				}
-
-				if time.Since(ts) < time.Hour*24 {
-					messages = append(messages, &msg)
+				value, err := item.ValueCopy(nil)
+				if err != nil {
+					return err
 				}
+				return decodeGob(value, &message)
+			})
+			if err != nil {
+				s.log.Error("failed to read message", zap.Error(err))
+				continue
 			}
+
+			messages = append(messages, &message)
 		}
 		return nil
 	})
+	if err != nil {
+		s.log.Error("failed to read messages", zap.Error(err))
+		return nil, err
+	}
+
 	return messages, err
 }
 
 func (s *Store) RunGC() {
-	gcTimer := time.NewTicker(time.Hour)
-	for range gcTimer.C {
-	gc:
-		if err := s.db.RunValueLogGC(0.5); err == nil {
-			goto gc
+	gcTicker := time.NewTicker(time.Hour)
+	for range gcTicker.C {
+		for {
+			err := s.db.RunValueLogGC(0.7)
+			if err == badger.ErrNoRewrite {
+				break
+			}
 		}
 	}
-}
-
-func ParseSnowflake(id string) (time.Time, error) {
-	n, err := strconv.ParseInt(id, 0, 63)
-	if err != nil {
-		return time.Now(), err
-	}
-	return time.Unix(((n>>22)+1420070400000)/1000, 0), nil
 }

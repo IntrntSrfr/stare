@@ -1,172 +1,111 @@
 package bot
 
 import (
-	"github.com/intrntsrfr/functional-logger/database"
-	"github.com/intrntsrfr/functional-logger/discord"
-	"github.com/intrntsrfr/functional-logger/kvstore"
+	"context"
+	"fmt"
 	"time"
 
-	"github.com/intrntsrfr/owo"
-
-	"go.uber.org/zap"
+	"github.com/intrntsrfr/functional-logger/database"
+	"github.com/intrntsrfr/functional-logger/kvstore"
+	"github.com/intrntsrfr/meido/pkg/mio"
+	"github.com/intrntsrfr/meido/pkg/mio/bot"
+	"github.com/intrntsrfr/meido/pkg/utils"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 type Bot struct {
-	store     *kvstore.Store
-	log       *zap.Logger
-	db        database.DB
-	disc      *discord.Discord
-	sess      *discordgo.Session
-	config    *Config
-	owo       *owo.Client
-	startTime time.Time
+	Bot    *bot.Bot
+	logger mio.Logger
+	config *utils.Config
+	db     database.DB
+	store  *kvstore.Store
 }
 
-type Config struct {
-	Store *kvstore.Store
-	Log   *zap.Logger
-	DB    database.DB
-	Owo   *owo.Client
-	Token string
-}
+func New(config *utils.Config, db database.DB) *Bot {
+	logger := newLogger("Bot")
 
-func NewBot(c *Config) (*Bot, error) {
-	b := &Bot{
-		store:     c.Store,
-		log:       c.Log,
-		db:        c.DB,
-		config:    c,
-		owo:       c.Owo,
-		startTime: time.Now(),
-	}
+	b := bot.NewBotBuilder(config).
+		WithDefaultHandlers().
+		WithLogger(logger).
+		Build()
 
-	disc, err := discord.NewDiscord(c.Token, c.Log.Named("discord"))
+	kvStore, err := kvstore.NewStore(logger.log)
 	if err != nil {
-		return nil, err
+		panic("failed to create kvstore")
 	}
-	b.disc = disc
-	b.sess = disc.Sess
 
-	return b, nil
-}
-
-func (b *Bot) Close() {
-	b.log.Info("stopping bot")
-	b.disc.Close()
-}
-
-func (b *Bot) Run() error {
-	b.log.Info("starting bot")
-	go b.listen(b.disc.Events)
-
-	err := b.disc.Open()
-	if err != nil {
-		return err
+	return &Bot{
+		Bot:    b,
+		db:     db,
+		logger: logger,
+		config: config,
+		store:  kvStore,
 	}
-	return nil
 }
 
-func (b *Bot) listen(evtCh <-chan interface{}) {
-	b.log.Info("listening for events")
-	for {
-		evt := <-evtCh
-		ctx := &Context{
-			b: b,
-			s: b.sess,
-			d: b.disc,
-		}
+func (m *Bot) Run(ctx context.Context) error {
+	m.registerModules()
+	m.registerDiscordHandlers()
+	return m.Bot.Run(ctx)
+}
 
-		if e, ok := evt.(*discordgo.Ready); ok {
-			b.log.Info("new event", zap.String("event", "ready"))
-			go readyHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.Disconnect); ok {
-			b.log.Info("new event", zap.String("event", "disconnect"))
-			go disconnectHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.MessageDeleteBulk); ok {
-			b.log.Info("new event", zap.String("event", "message delete bulk"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil {
-				continue
+func (m *Bot) Close() {
+	m.Bot.Close()
+}
+
+func (m *Bot) registerModules() {
+	modules := []bot.Module{
+		NewModule(m.Bot, m.logger),
+	}
+	for _, mod := range modules {
+		m.Bot.RegisterModule(mod)
+	}
+}
+
+func (m *Bot) registerDiscordHandlers() {
+	m.Bot.Discord.AddEventHandlerOnce(statusLoop(m))
+	m.Bot.Discord.AddEventHandler(disconnectHandler(m))
+	m.Bot.Discord.AddEventHandler(guildBanAddHandler(m))
+	m.Bot.Discord.AddEventHandler(guildBanRemoveHandler(m))
+	m.Bot.Discord.AddEventHandler(guildCreateHandler(m))
+	m.Bot.Discord.AddEventHandler(guildMemberAddHandler(m))
+	m.Bot.Discord.AddEventHandler(guildMemberRemoveHandler(m))
+	m.Bot.Discord.AddEventHandler(guildMemberUpdateHandler(m))
+	m.Bot.Discord.AddEventHandler(guildMembersChunkHandler(m))
+	m.Bot.Discord.AddEventHandler(messageCreateHandler(m))
+	m.Bot.Discord.AddEventHandler(messageDeleteBulkHandler(m))
+	m.Bot.Discord.AddEventHandler(messageDeleteHandler(m))
+	m.Bot.Discord.AddEventHandler(messageUpdateHandler(m))
+}
+
+const totalStatusDisplays = 1
+
+func statusLoop(m *Bot) func(s *discordgo.Session, r *discordgo.Ready) {
+	statusTimer := time.NewTicker(time.Second * 15)
+	return func(s *discordgo.Session, r *discordgo.Ready) {
+		display := 0
+		go func() {
+			for range statusTimer.C {
+				var (
+					name       string
+					statusType discordgo.ActivityType
+				)
+				switch display {
+				case 0:
+					srvCount := m.Bot.Discord.GuildCount()
+					name = fmt.Sprintf("%v servers", srvCount)
+					statusType = discordgo.ActivityTypeWatching
+				}
+
+				_ = s.UpdateStatusComplex(discordgo.UpdateStatusData{
+					Activities: []*discordgo.Activity{{
+						Name: name,
+						Type: statusType,
+					}},
+				})
+				display = (display + 1) % totalStatusDisplays
 			}
-			ctx.gc = gc
-			go messageDeleteBulkHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.MessageDelete); ok {
-			b.log.Info("new event", zap.String("event", "message delete"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil {
-				continue
-			}
-			ctx.gc = gc
-			go messageDeleteHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.MessageUpdate); ok {
-			b.log.Info("new event", zap.String("event", "message update"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil {
-				continue
-			}
-			ctx.gc = gc
-			go messageUpdateHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.MessageCreate); ok {
-			b.log.Info("new event", zap.String("event", "message create"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil {
-				continue
-			}
-			ctx.gc = gc
-			go messageCreateHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildBanRemove); ok {
-			b.log.Info("new event", zap.String("event", "guild ban remove"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil || gc.UnbanLog == "" {
-				continue
-			}
-			ctx.gc = gc
-			go guildBanRemoveHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildBanAdd); ok {
-			b.log.Info("new event", zap.String("event", "guild ban add"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil || gc.BanLog == "" {
-				continue
-			}
-			ctx.gc = gc
-			go guildBanAddHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildMembersChunk); ok {
-			b.log.Info("new event", zap.String("event", "guild members chunk"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil {
-				continue
-			}
-			ctx.gc = gc
-			go guildMembersChunkHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildMemberRemove); ok {
-			b.log.Info("new event", zap.String("event", "guild member remove"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil || gc.LeaveLog == "" {
-				continue
-			}
-			ctx.gc = gc
-			go guildMemberRemoveHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildMemberAdd); ok {
-			b.log.Info("new event", zap.String("event", "guild member add"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil || gc.JoinLog == "" {
-				continue
-			}
-			ctx.gc = gc
-			go guildMemberAddHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildMemberUpdate); ok {
-			b.log.Info("new event", zap.String("event", "guild member update"))
-			gc, err := b.db.GetGuild(e.GuildID)
-			if err != nil {
-				continue
-			}
-			ctx.gc = gc
-			go guildMemberUpdateHandler(ctx, e)
-		} else if e, ok := evt.(*discordgo.GuildCreate); ok {
-			b.log.Info("new event", zap.String("event", "guild create"))
-			go guildCreateHandler(ctx, e)
-		}
+		}()
 	}
 }
