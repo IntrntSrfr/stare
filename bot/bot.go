@@ -56,7 +56,7 @@ func (m *Bot) Close() {
 
 func (m *Bot) registerModules() {
 	modules := []bot.Module{
-		NewModule(m.Bot, m.logger),
+		NewModule(m.Bot, m.db, m.logger),
 	}
 	for _, mod := range modules {
 		m.Bot.RegisterModule(mod)

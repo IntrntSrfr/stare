@@ -1,5 +1,4 @@
 {
     "token": "DISCORD BOT TOKEN",
-    "connection_string": "DATABASE CONNECTION STRING",
-    "owo_api_key": "OWO.SH API KEY"
+    "shards": 1
 }

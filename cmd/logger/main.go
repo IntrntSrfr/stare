@@ -1,85 +1,55 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"github.com/intrntsrfr/functional-logger/database"
-	"github.com/intrntsrfr/functional-logger/kvstore"
-	"go.uber.org/zap/zapcore"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/intrntsrfr/functional-logger/bot"
-	"github.com/intrntsrfr/owo"
-
-	_ "github.com/lib/pq"
-	"go.uber.org/zap"
+	"github.com/intrntsrfr/functional-logger/database"
+	"github.com/intrntsrfr/meido/pkg/utils"
 )
 
-type Config struct {
-	Token            string `json:"token"`
-	ConnectionString string `json:"connection_string"`
-	OwoAPIKey        string `json:"owo_api_key"`
+func main() {
+	cfg := utils.NewConfig()
+	loadConfig(cfg, "./config.json")
+
+	jsonDb, err := database.NewJsonDatabase("./data.json")
+	if err != nil {
+		panic(err)
+	}
+	defer jsonDb.Close()
+
+	bot := bot.New(cfg, jsonDb)
+	defer bot.Close()
+
+	if err := bot.Run(context.Background()); err != nil {
+		panic(err)
+	}
+
+	sc := make(chan os.Signal, 1)
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM)
+	<-sc
 }
 
-func main() {
-	d, err := os.ReadFile("./config.json")
+type config struct {
+	Token  string `json:"token"`
+	Shards int    `json:"shards"`
+}
+
+func loadConfig(cfg *utils.Config, path string) {
+	f, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatalf("failed to read config: %v", err)
+		panic(err)
 	}
 
-	var config *Config
-	err = json.Unmarshal(d, &config)
-	if err != nil {
-		log.Fatalf("failed to parse config: %v", err)
+	var c config
+	if err := json.Unmarshal(f, &c); err != nil {
+		panic(err)
 	}
 
-	// dependencies
-	z := zap.NewDevelopmentConfig()
-	z.OutputPaths = []string{"stdout", "./logs.txt"}
-	z.ErrorOutputPaths = []string{"stderr", "./logs.txt"}
-	z.Level.SetLevel(zapcore.WarnLevel)
-	logger, err := z.Build()
-	if err != nil {
-		log.Fatalf("failed to build logger: %v", err)
-	}
-	defer logger.Sync()
-
-	psql, err := database.NewJsonDatabase("./data.json")
-	if err != nil {
-		log.Fatalf("failed to open DB connection: %v", err)
-	}
-	defer psql.Close()
-
-	owoCl := owo.NewClient(config.OwoAPIKey)
-	store, err := kvstore.NewStore(logger.Named("store"))
-	if err != nil {
-		log.Fatalf("failed to open kv store: %v", err)
-	}
-	defer store.Close()
-
-	// bot
-	client, err := bot.NewBot(&bot.Config{
-		Store: store,
-		Log:   logger.Named("bot"),
-		DB:    psql,
-		Owo:   owoCl,
-		Token: config.Token,
-	})
-	if err != nil {
-		log.Fatalf("failed to create bot: %v", err)
-	}
-	defer client.Close()
-
-	// run
-	err = client.Run()
-	if err != nil {
-		log.Fatalf("failed to run: %v", err)
-	}
-
-	// block until ctrl-c
-	sc := make(chan os.Signal, 1)
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-	<-sc
+	cfg.Set("token", c.Token)
+	cfg.Set("shards", c.Shards)
 }
