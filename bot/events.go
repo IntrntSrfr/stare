@@ -256,7 +256,7 @@ func messageDeleteHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDel
 			WithDescription("No content")
 		reply := builders.NewMessageSendBuilder()
 
-		if m.Content != "" {
+		if msg.Message.Content != "" {
 			str := msg.Message.Content
 			if len(str) > 1024 {
 				str = "Content too long, so it's put in the attached .txt file"
