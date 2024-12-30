@@ -1,10 +1,6 @@
 *.zip
 .idea
-data
-
 *.json
 !*template.json
-
 *.txt
-
 *.exe

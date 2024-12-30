@@ -29,7 +29,7 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 			return
 		}
 
-		_, err = b.db.GetGuild(g.ID)
+		gc, err := b.db.GetGuild(g.ID)
 		if err != nil {
 			b.logger.Error("failed to get guild", zap.Error(err))
 			return
@@ -64,7 +64,7 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 		}
 
 		reply := builders.NewMessageSendBuilder().Embed(embed.Build())
-		_, _ = s.ChannelMessageSendComplex(m.GuildID, reply.Build())
+		_, _ = s.ChannelMessageSendComplex(gc.BanLog, reply.Build())
 	}
 }
 
