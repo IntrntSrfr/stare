@@ -35,15 +35,18 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 			return
 		}
 
-		replyEmbed := builders.NewEmbedBuilder().
-			WithTitle("User Banned")
+		embed := builders.NewEmbedBuilder().
+			WithTitle("User Banned").
+			WithThumbnail(m.User.AvatarURL("256")).
+			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
+			AddField("ID", m.User.ID, false)
 
 		if _, err = b.store.GetMember(m.GuildID, m.User.ID); err != nil {
 			if err != badger.ErrKeyNotFound {
 				b.logger.Error("failed to get member", zap.Error(err))
 				return
 			}
-			replyEmbed.WithDescription("User was not in the server")
+			embed.WithDescription("User was not in the server")
 		}
 
 		// fetch their messages and attachments
@@ -52,12 +55,6 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 			b.logger.Error("failed to get message log", zap.Error(err))
 			return
 		}
-
-		embed := builders.NewEmbedBuilder().
-			WithTitle("User Banned").
-			WithThumbnail(m.User.AvatarURL("256")).
-			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
-			AddField("ID", m.User.ID, false)
 
 		if len(messages) > 0 {
 			embed.AddField("Total messages", fmt.Sprint(len(messages)), false)
