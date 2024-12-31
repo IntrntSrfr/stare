@@ -24,38 +24,6 @@ const (
 	ColorOrange Color = 0xf57f54
 )
 
-const totalStatusDisplays = 1
-
-func statusLoop(b *Bot) func(*discordgo.Session, *discordgo.Ready) {
-	b.logger.Info("ready")
-	statusTimer := time.NewTicker(time.Second * 15)
-	return func(s *discordgo.Session, r *discordgo.Ready) {
-		display := 0
-		go func() {
-			for range statusTimer.C {
-				var (
-					name       string
-					statusType discordgo.ActivityType
-				)
-				switch display {
-				case 0:
-					srvCount := b.Bot.Discord.GuildCount()
-					name = fmt.Sprintf("%v servers", srvCount)
-					statusType = discordgo.ActivityTypeWatching
-				}
-
-				_ = s.UpdateStatusComplex(discordgo.UpdateStatusData{
-					Activities: []*discordgo.Activity{{
-						Name: name,
-						Type: statusType,
-					}},
-				})
-				display = (display + 1) % totalStatusDisplays
-			}
-		}()
-	}
-}
-
 func disconnectHandler(b *Bot) func(*discordgo.Session, *discordgo.Disconnect) {
 	return func(s *discordgo.Session, d *discordgo.Disconnect) {
 		b.logger.Info("disconnected")

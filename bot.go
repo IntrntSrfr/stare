@@ -59,7 +59,6 @@ func (b *Bot) registerModules() {
 }
 
 func (b *Bot) registerDiscordHandlers() {
-	b.Bot.Discord.AddEventHandlerOnce(statusLoop(b))
 	b.Bot.Discord.AddEventHandler(disconnectHandler(b))
 	b.Bot.Discord.AddEventHandler(guildBanAddHandler(b))
 	b.Bot.Discord.AddEventHandler(guildBanRemoveHandler(b))
