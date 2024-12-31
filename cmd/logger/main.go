@@ -7,8 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/intrntsrfr/functional-logger/bot"
-	"github.com/intrntsrfr/functional-logger/database"
+	stare "github.com/intrntsrfr/functional-logger"
 	"github.com/intrntsrfr/meido/pkg/utils"
 )
 
@@ -16,13 +15,13 @@ func main() {
 	cfg := utils.NewConfig()
 	loadConfig(cfg, "./config.json")
 
-	jsonDb, err := database.NewJsonDatabase("./data.json")
+	jsonDb, err := stare.NewJsonDatabase("./data.json")
 	if err != nil {
 		panic(err)
 	}
 	defer jsonDb.Close()
 
-	bot := bot.New(cfg, jsonDb)
+	bot := stare.NewBot(cfg, jsonDb)
 	defer bot.Close()
 
 	if err := bot.Run(context.Background()); err != nil {

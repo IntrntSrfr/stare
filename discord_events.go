@@ -1,4 +1,4 @@
-package bot
+package stare
 
 import (
 	"bytes"
@@ -9,11 +9,42 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/dgraph-io/badger"
-	"github.com/intrntsrfr/functional-logger/kvstore"
 	"github.com/intrntsrfr/meido/pkg/utils"
 	"github.com/intrntsrfr/meido/pkg/utils/builders"
 	"go.uber.org/zap"
 )
+
+const totalStatusDisplays = 1
+
+func statusLoop(b *Bot) func(*discordgo.Session, *discordgo.Ready) {
+	b.logger.Info("ready")
+	statusTimer := time.NewTicker(time.Second * 15)
+	return func(s *discordgo.Session, r *discordgo.Ready) {
+		display := 0
+		go func() {
+			for range statusTimer.C {
+				var (
+					name       string
+					statusType discordgo.ActivityType
+				)
+				switch display {
+				case 0:
+					srvCount := b.Bot.Discord.GuildCount()
+					name = fmt.Sprintf("%v servers", srvCount)
+					statusType = discordgo.ActivityTypeWatching
+				}
+
+				_ = s.UpdateStatusComplex(discordgo.UpdateStatusData{
+					Activities: []*discordgo.Activity{{
+						Name: name,
+						Type: statusType,
+					}},
+				})
+				display = (display + 1) % totalStatusDisplays
+			}
+		}()
+	}
+}
 
 func disconnectHandler(b *Bot) func(*discordgo.Session, *discordgo.Disconnect) {
 	return func(s *discordgo.Session, d *discordgo.Disconnect) {
@@ -87,8 +118,9 @@ func guildBanRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanR
 	}
 }
 
-func guildCreateHandler(b *Bot) func(s *discordgo.Session, g *discordgo.GuildCreate) {
+func guildCreateHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildCreate) {
 	return func(s *discordgo.Session, d *discordgo.GuildCreate) {
+
 		if _, err := b.db.GetGuild(d.ID); err != nil {
 			err = b.db.CreateGuild(d.ID)
 			if err != nil {
@@ -197,7 +229,7 @@ func guildMemberRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 	}
 }
 
-func guildMembersChunkHandler(b *Bot) func(s *discordgo.Session, g *discordgo.GuildMembersChunk) {
+func guildMembersChunkHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMembersChunk) {
 	return func(s *discordgo.Session, g *discordgo.GuildMembersChunk) {
 		for _, mem := range g.Members {
 			err := b.store.SetMember(mem)
@@ -226,7 +258,7 @@ func messageCreateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageCre
 		}
 
 		// max size 10mb
-		_ = b.store.SetMessage(kvstore.NewDiscordMessage(m.Message, 1024*1024*10))
+		_ = b.store.SetMessage(NewDiscordMessage(m.Message, 1024*1024*10))
 	}
 }
 
@@ -300,7 +332,7 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 			WithTitle(fmt.Sprintf("Bulk Message Delete - (%v) messages", len(m.Messages))).
 			AddField("Channel", fmt.Sprintf("<#%v>", m.ChannelID), true)
 
-		var messages []*kvstore.DiscordMessage
+		var messages []*DiscordMessage
 		for _, msgID := range m.Messages {
 			msg, err := b.store.GetMessage(m.GuildID, m.ChannelID, msgID)
 			if err != nil {
@@ -308,7 +340,10 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 			}
 			messages = append(messages, msg)
 		}
-		sort.Sort(kvstore.ByID(messages))
+
+		sort.Slice(messages, func(i, j int) bool {
+			return messages[i].Message.ID < messages[j].Message.ID
+		})
 
 		builder := strings.Builder{}
 		builder.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, time.Now().Format(time.RFC3339)))
@@ -331,7 +366,7 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 func messageUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageUpdate) {
 	return func(s *discordgo.Session, m *discordgo.MessageUpdate) {
 		// This means it was an image update and not an actual edit
-		if m.Message.Content == "" {
+		if m.Message.Content == "" || m.Author.Bot {
 			return
 		}
 

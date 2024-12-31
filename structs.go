@@ -1,4 +1,4 @@
-package kvstore
+package stare
 
 import (
 	"io"
@@ -45,20 +45,6 @@ func GetAttachment(url string) ([]byte, error) {
 	defer res.Body.Close()
 
 	return io.ReadAll(res.Body)
-}
-
-type ByID []*DiscordMessage
-
-func (m ByID) Len() int {
-	return len(m)
-}
-
-func (m ByID) Less(i, j int) bool {
-	return m[i].Message.ID < m[j].Message.ID
-}
-
-func (m ByID) Swap(i, j int) {
-	m[i], m[j] = m[j], m[i]
 }
 
 type Attachment struct {

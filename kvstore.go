@@ -1,4 +1,4 @@
-package kvstore
+package stare
 
 import (
 	"bytes"
@@ -6,13 +6,45 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
-
-	"github.com/dgraph-io/badger/options"
-
 	"github.com/bwmarrin/discordgo"
 	"github.com/dgraph-io/badger"
+	"github.com/dgraph-io/badger/options"
+	"go.uber.org/zap"
 )
+
+type Store struct {
+	db     *badger.DB
+	logger *ZapLogger
+}
+
+func NewStore(logger *ZapLogger) (*Store, error) {
+	logger = logger.Named("kvstore").(*ZapLogger)
+	badgerLogger := logger.Named("badger").(*ZapLogger)
+	s := &Store{
+		logger: logger,
+	}
+
+	opts := badger.DefaultOptions("./data")
+	opts.Truncate = true
+	opts.ValueLogLoadingMode = options.FileIO
+	opts.NumVersionsToKeep = 1
+	opts.Logger = badgerLogger
+
+	db, err := badger.Open(opts)
+	if err != nil {
+		s.logger.Info("error", zap.Error(err))
+		return nil, err
+	}
+	s.db = db
+
+	go s.RunGC()
+
+	return s, nil
+}
+
+func (s *Store) Close() error {
+	return s.db.Close()
+}
 
 func encodeGob(v interface{}) ([]byte, error) {
 	var buf bytes.Buffer
@@ -28,40 +60,10 @@ func decodeGob(data []byte, v interface{}) error {
 	return gob.NewDecoder(buffer).Decode(v)
 }
 
-type Store struct {
-	db  *badger.DB
-	log *zap.Logger
-}
-
-func NewStore(log *zap.Logger) (*Store, error) {
-	s := &Store{
-		log: log,
-	}
-
-	opts := badger.DefaultOptions("./data")
-	opts.Truncate = true
-	opts.ValueLogLoadingMode = options.FileIO
-	opts.NumVersionsToKeep = 1
-	db, err := badger.Open(opts)
-	if err != nil {
-		s.log.Info("error", zap.Error(err))
-		return nil, err
-	}
-	s.db = db
-
-	go s.RunGC()
-
-	return s, nil
-}
-
-func (s *Store) Close() error {
-	return s.db.Close()
-}
-
 func (s *Store) SetMember(m *discordgo.Member) error {
 	enc, err := encodeGob(m)
 	if err != nil {
-		s.log.Error("failed to encode member", zap.Error(err))
+		s.logger.Error("failed to encode member", zap.Error(err))
 		return err
 	}
 
@@ -87,7 +89,7 @@ func (s *Store) GetMember(gid, uid string) (*discordgo.Member, error) {
 		return decodeGob(value, &member)
 	}); err != nil {
 		if err != badger.ErrKeyNotFound {
-			s.log.Error("failed to read value", zap.Error(err))
+			s.logger.Error("failed to read value", zap.Error(err))
 		}
 		return nil, err
 	}
@@ -138,7 +140,7 @@ func (s *Store) GetMessage(gid, cid, mid string) (*DiscordMessage, error) {
 		return decodeGob(value, &message)
 	}); err != nil {
 		if err != badger.ErrKeyNotFound {
-			s.log.Error("failed to read message", zap.Error(err))
+			s.logger.Error("failed to read message", zap.Error(err))
 		}
 		return nil, err
 	}
@@ -158,7 +160,7 @@ func (s *Store) GetMessageLog(gid, uid string) ([]*DiscordMessage, error) {
 			var messageKey string
 			value, err := item.ValueCopy(nil)
 			if err != nil {
-				s.log.Error("failed to read value", zap.Error(err))
+				s.logger.Error("failed to read value", zap.Error(err))
 				continue
 			}
 			messageKey = string(value)
@@ -176,7 +178,7 @@ func (s *Store) GetMessageLog(gid, uid string) ([]*DiscordMessage, error) {
 				return decodeGob(value, &message)
 			})
 			if err != nil {
-				s.log.Error("failed to read message", zap.Error(err))
+				s.logger.Error("failed to read message", zap.Error(err))
 				continue
 			}
 
@@ -185,7 +187,7 @@ func (s *Store) GetMessageLog(gid, uid string) ([]*DiscordMessage, error) {
 		return nil
 	})
 	if err != nil {
-		s.log.Error("failed to read messages", zap.Error(err))
+		s.logger.Error("failed to read messages", zap.Error(err))
 		return nil, err
 	}
 

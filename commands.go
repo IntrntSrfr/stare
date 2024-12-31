@@ -1,4 +1,4 @@
-package bot
+package stare
 
 import (
 	"fmt"
@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/intrntsrfr/functional-logger/database"
 	"github.com/intrntsrfr/meido/pkg/mio"
 	"github.com/intrntsrfr/meido/pkg/mio/bot"
 	"github.com/intrntsrfr/meido/pkg/mio/discord"
@@ -17,10 +16,10 @@ import (
 type module struct {
 	*bot.ModuleBase
 	startTime time.Time
-	db        database.DB
+	db        DB
 }
 
-func NewModule(b *bot.Bot, db database.DB, logger mio.Logger) *module {
+func NewModule(b *bot.Bot, db DB, logger mio.Logger) *module {
 	logger = logger.Named("commands")
 	return &module{
 		ModuleBase: bot.NewModule(b, "commands", logger),
@@ -207,7 +206,7 @@ func newSettingsSlash(m *module) *bot.ModuleApplicationCommand {
 	return cmd.Execute(run).Build()
 }
 
-func generateLogSettingsEmbed(gc *database.Guild) *discordgo.MessageEmbed {
+func generateLogSettingsEmbed(gc *Guild) *discordgo.MessageEmbed {
 	embed := builders.NewEmbedBuilder().
 		WithTitle("Settings").
 		WithOkColor().
