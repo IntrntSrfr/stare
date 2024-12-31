@@ -1,32 +1,34 @@
-# Discord logger for some events
+# Stare - A Discord server logger
 
 ## Requirements
 
-- PostgreSQL database
-- Golang
-- Enough space :)
+- Go 1.22
 
 ## How to run
 
-idk yet im working on it.
+A `config.json` file is required, make sure it's put wherever its being run from. 
+Use the [template json file](cmd/logger/config-template.json) as a starting point.
 
-A `config.json` file is required, make sure it's put wherever its being run from.
+```bash
+$ cd cmd/logger
+$ go build
+$ ./logger
+```
 
-| Key               | Value                        |
-|-------------------|------------------------------|
-| token             | Discord bot token            |
-| connection_string | PostgreSQL connection string |
-| owo_api_key       | OwO API Key                  |
+## What gets logged:
 
-## Structure?
+- When a user joins the server
+- When a user leaves the server
+- When a message is deleted
+- When messages are bulk deleted
+- When a message is edited
+- When a user is banned
+- When a user is unbanned
 
-- [`cmd/logger`](/cmd/logger)
-  - Entrypoint
-- [`/bot`](/bot)
-  - Uses and combines all the other stuff in here
-- [`/database`](/database)
-  - Database to track guild configs
-- [`/discord`](/discord)
-  - Combines discord sessions into one unit with an event channel
-- [`/kvstore`](/kvstore)
-  - Persistent key-value store to track member and message data
+## Commands
+
+- /help
+- /info
+- /settings set
+  - Set channels to post logs for events 
+- /settings view
