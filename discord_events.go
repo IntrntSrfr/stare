@@ -14,6 +14,16 @@ import (
 	"go.uber.org/zap"
 )
 
+type Color int
+
+const (
+	ColorRed    Color = 0xff0000
+	ColorGreen  Color = 0x00ff00
+	ColorBlue   Color = 0x61d1ed
+	ColorWhite  Color = 0xffffff
+	ColorOrange Color = 0xf57f54
+)
+
 const totalStatusDisplays = 1
 
 func statusLoop(b *Bot) func(*discordgo.Session, *discordgo.Ready) {
@@ -70,7 +80,8 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 			WithTitle("User Banned").
 			WithThumbnail(m.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
-			AddField("ID", m.User.ID, false)
+			AddField("ID", m.User.ID, false).
+			WithColor(int(ColorRed))
 
 		if _, err = b.store.GetMember(m.GuildID, m.User.ID); err != nil {
 			if err != badger.ErrKeyNotFound {
@@ -113,7 +124,8 @@ func guildBanRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanR
 			WithTitle("User Unbanned").
 			WithThumbnail(d.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
-			AddField("ID", d.User.ID, false)
+			AddField("ID", d.User.ID, false).
+			WithColor(int(ColorGreen))
 		_, _ = s.ChannelMessageSendEmbed(gc.UnbanLog, embed.Build())
 	}
 }
@@ -167,7 +179,8 @@ func guildMemberAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemb
 			WithThumbnail(m.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
 			AddField("ID", m.User.ID, false).
-			AddField("Creation date", fmt.Sprintf("<t:%v:R>", ts.Unix()), false)
+			AddField("Creation date", fmt.Sprintf("<t:%v:R>", ts.Unix()), false).
+			WithColor(int(ColorBlue))
 		_, _ = s.ChannelMessageSendEmbed(gc.JoinLog, embed.Build())
 	}
 }
@@ -194,7 +207,8 @@ func guildMemberRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 			WithTitle("User Left or Kicked").
 			WithThumbnail(m.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
-			AddField("ID", m.User.ID, false)
+			AddField("ID", m.User.ID, false).
+			WithColor(int(ColorOrange))
 
 		var roles []string
 		for _, r := range mem.Roles {
@@ -285,7 +299,8 @@ func messageDeleteHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDel
 			AddField("User", fmt.Sprintf("%v\n%v\n%v", msg.Message.Author.Mention(), msg.Message.Author.String(), msg.Message.Author.ID), true).
 			AddField("Message ID", m.ID, true).
 			AddField("Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false).
-			WithDescription("No content")
+			WithDescription("No content").
+			WithColor(int(ColorWhite))
 		reply := builders.NewMessageSendBuilder()
 
 		if msg.Message.Content != "" {
@@ -330,7 +345,8 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 
 		embed := builders.NewEmbedBuilder().
 			WithTitle(fmt.Sprintf("Bulk Message Delete - (%v) messages", len(m.Messages))).
-			AddField("Channel", fmt.Sprintf("<#%v>", m.ChannelID), true)
+			AddField("Channel", fmt.Sprintf("<#%v>", m.ChannelID), true).
+			WithColor(int(ColorWhite))
 
 		var messages []*DiscordMessage
 		for _, msgID := range m.Messages {
@@ -395,7 +411,8 @@ func messageUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageUpd
 			WithTitle("Message Edited").
 			AddField("User", fmt.Sprintf("%v\n%v\n%v", m.Author.Mention(), m.Author.String(), m.Author.ID), true).
 			AddField("Message ID", m.ID, true).
-			AddField("Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false)
+			AddField("Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false).
+			WithColor(int(ColorBlue))
 
 		reply := builders.NewMessageSendBuilder()
 
