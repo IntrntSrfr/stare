@@ -1,6 +1,8 @@
 package stare
 
 import (
+	"os"
+
 	"github.com/intrntsrfr/meido/pkg/mio"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -12,15 +14,28 @@ type ZapLogger struct {
 }
 
 func newLogger(name string) *ZapLogger {
-	cfg := zap.NewProductionConfig()
-	cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	cfg.EncoderConfig.CallerKey = ""
-	cfg.EncoderConfig.NameKey = ""
-	cfg.EncoderConfig.EncodeTime = zapcore.EpochNanosTimeEncoder
-	cfg.Encoding = "console"
-	cfg.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
-	logger, _ := cfg.Build()
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "time",
+		LevelKey:       "level",
+		NameKey:        "",
+		CallerKey:      "",
+		MessageKey:     "msg",
+		StacktraceKey:  "stacktrace",
+		LineEnding:     zapcore.DefaultLineEnding,
+		EncodeLevel:    zapcore.CapitalColorLevelEncoder,
+		EncodeTime:     zapcore.RFC3339TimeEncoder,
+		EncodeDuration: zapcore.StringDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
 
+	consoleEncoder := zapcore.NewConsoleEncoder(encoderConfig)
+	logLevel := zapcore.DebugLevel
+	core := zapcore.NewCore(
+		consoleEncoder,
+		zapcore.Lock(os.Stdout),
+		zap.NewAtomicLevelAt(logLevel),
+	)
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
 	return &ZapLogger{logger.Named(name)}
 }
 

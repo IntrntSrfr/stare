@@ -19,7 +19,10 @@ type Store struct {
 
 func NewStore(logger *ZapLogger) (*Store, error) {
 	logger = logger.Named("kvstore").(*ZapLogger)
-	badgerLogger := logger.Named("badger").(*ZapLogger)
+	badgerLogger := &ZapLogger{
+		log: logger.Named("badger").(*ZapLogger).log.WithOptions(zap.AddCallerSkip(1)),
+	}
+
 	s := &Store{
 		logger: logger,
 	}
@@ -27,12 +30,11 @@ func NewStore(logger *ZapLogger) (*Store, error) {
 	opts := badger.DefaultOptions("./data")
 	opts.Truncate = true
 	opts.ValueLogLoadingMode = options.FileIO
-	opts.NumVersionsToKeep = 1
 	opts.Logger = badgerLogger
 
 	db, err := badger.Open(opts)
 	if err != nil {
-		s.logger.Info("error", zap.Error(err))
+		s.logger.Info("failed to open BadgerDB", zap.Error(err))
 		return nil, err
 	}
 	s.db = db

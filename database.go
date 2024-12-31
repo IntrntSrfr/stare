@@ -3,7 +3,6 @@ package stare
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 
@@ -66,12 +65,9 @@ func (j *JsonDB) Close() error {
 
 func (j *JsonDB) load(path string) error {
 	if _, err := os.Stat(path); err != nil {
-		// file does not exist, so use default
-		fmt.Println("no data file found, using default")
 		return nil
 	}
 
-	fmt.Println("data file found")
 	d, err := os.ReadFile(path)
 	if err != nil {
 		return err
