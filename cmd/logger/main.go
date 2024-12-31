@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	stare "github.com/intrntsrfr/functional-logger"
 	"github.com/intrntsrfr/meido/pkg/utils"
+	"github.com/intrntsrfr/stare"
 )
 
 func main() {

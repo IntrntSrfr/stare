@@ -1,4 +1,4 @@
-module github.com/intrntsrfr/functional-logger
+module github.com/intrntsrfr/stare
 
 go 1.22
 
