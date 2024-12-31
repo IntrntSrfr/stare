@@ -86,7 +86,6 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 		if _, err = b.store.GetMember(m.GuildID, m.User.ID); err != nil {
 			if err != badger.ErrKeyNotFound {
 				b.logger.Error("failed to get member", zap.Error(err))
-				return
 			}
 			embed.WithDescription("User was not in the server")
 		}
@@ -95,21 +94,39 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 		messages, err := b.store.GetMessageLog(m.GuildID, m.User.ID)
 		if err != nil {
 			b.logger.Error("failed to get message log", zap.Error(err))
-			return
+		}
+
+		builder := strings.Builder{}
+		for _, msg := range messages {
+			ch, err := b.Bot.Discord.Channel(msg.Message.ChannelID)
+			if err != nil {
+				b.logger.Error("failed to fetch channel", zap.Error(err))
+				continue
+			}
+
+			ts := utils.IDToTimestamp(msg.Message.ID).Format(time.DateTime)
+			text := fmt.Sprintf("\nChannel: %v (%v)\nTimestamp: %v\nContent: %v\n", ch.Name, ch.ID, ts, msg.Message.Content)
+			if len(msg.Attachments) > 0 {
+				text += "Info: Message had attachment\n"
+			}
+			builder.WriteString(text)
 		}
 
 		if len(messages) > 0 {
+			embed.WithDescription(embed.Description + "\n24 hour message log is attached")
 			embed.AddField("Total messages", fmt.Sprint(len(messages)), false)
 		}
 
-		reply := builders.NewMessageSendBuilder().Embed(embed.Build())
+		reply := builders.NewMessageSendBuilder().
+			AddTextFile(fmt.Sprintf("24h_ban_log_%v_%v.txt", m.User.ID, time.Now().Unix()), builder.String()).
+			Embed(embed.Build())
 		_, _ = s.ChannelMessageSendComplex(gc.BanLog, reply.Build())
 	}
 }
 
 func guildBanRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanRemove) {
 	return func(s *discordgo.Session, d *discordgo.GuildBanRemove) {
-		g, err := s.State.Guild(d.GuildID)
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			return
 		}
@@ -132,7 +149,6 @@ func guildBanRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanR
 
 func guildCreateHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildCreate) {
 	return func(s *discordgo.Session, d *discordgo.GuildCreate) {
-
 		if _, err := b.db.GetGuild(d.ID); err != nil {
 			err = b.db.CreateGuild(d.ID)
 			if err != nil {
@@ -156,13 +172,13 @@ func guildCreateHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildCreate)
 }
 
 func guildMemberAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemberAdd) {
-	return func(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
-		err := b.store.SetMember(m.Member)
+	return func(s *discordgo.Session, d *discordgo.GuildMemberAdd) {
+		err := b.store.SetMember(d.Member)
 		if err != nil {
 			b.logger.Error("failed to set member", zap.Error(err))
 		}
 
-		g, err := s.State.Guild(m.GuildID)
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			return
 		}
@@ -173,12 +189,12 @@ func guildMemberAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemb
 			return
 		}
 
-		ts := utils.IDToTimestamp(m.User.ID)
+		ts := utils.IDToTimestamp(d.User.ID)
 		embed := builders.NewEmbedBuilder().
 			WithTitle("User Joined").
-			WithThumbnail(m.User.AvatarURL("256")).
-			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
-			AddField("ID", m.User.ID, false).
+			WithThumbnail(d.User.AvatarURL("256")).
+			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
+			AddField("ID", d.User.ID, false).
 			AddField("Creation date", fmt.Sprintf("<t:%v:R>", ts.Unix()), false).
 			WithColor(int(ColorBlue))
 		_, _ = s.ChannelMessageSendEmbed(gc.JoinLog, embed.Build())
@@ -186,8 +202,8 @@ func guildMemberAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemb
 }
 
 func guildMemberRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemberRemove) {
-	return func(s *discordgo.Session, m *discordgo.GuildMemberRemove) {
-		g, err := s.State.Guild(m.GuildID)
+	return func(s *discordgo.Session, d *discordgo.GuildMemberRemove) {
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			return
 		}
@@ -198,16 +214,16 @@ func guildMemberRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 			return
 		}
 
-		mem, err := b.store.GetMember(m.GuildID, m.User.ID)
+		mem, err := b.store.GetMember(d.GuildID, d.User.ID)
 		if err != nil {
 			return
 		}
 
 		embed := builders.NewEmbedBuilder().
 			WithTitle("User Left or Kicked").
-			WithThumbnail(m.User.AvatarURL("256")).
-			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
-			AddField("ID", m.User.ID, false).
+			WithThumbnail(d.User.AvatarURL("256")).
+			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
+			AddField("ID", d.User.ID, false).
 			WithColor(int(ColorOrange))
 
 		var roles []string
@@ -234,18 +250,16 @@ func guildMemberRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 		}
 
 		_, _ = s.ChannelMessageSendEmbed(gc.LeaveLog, embed.Build())
-		/*
-			err = b.store.DeleteMember(m.GuildID, m.User.ID)
-			if err != nil {
-				b.logger.Error("failed to delete member", zap.Error(err))
-			}
-		*/
+		err = b.store.DeleteMember(d.GuildID, d.User.ID)
+		if err != nil {
+			b.logger.Error("failed to delete member", zap.Error(err))
+		}
 	}
 }
 
 func guildMembersChunkHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMembersChunk) {
-	return func(s *discordgo.Session, g *discordgo.GuildMembersChunk) {
-		for _, mem := range g.Members {
+	return func(s *discordgo.Session, d *discordgo.GuildMembersChunk) {
+		for _, mem := range d.Members {
 			err := b.store.SetMember(mem)
 			if err != nil {
 				b.logger.Error("failed to set member", zap.Error(err))
@@ -256,8 +270,8 @@ func guildMembersChunkHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 }
 
 func guildMemberUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemberUpdate) {
-	return func(s *discordgo.Session, m *discordgo.GuildMemberUpdate) {
-		err := b.store.SetMember(m.Member)
+	return func(s *discordgo.Session, d *discordgo.GuildMemberUpdate) {
+		err := b.store.SetMember(d.Member)
 		if err != nil {
 			b.logger.Error("failed to update member", zap.Error(err))
 			return
@@ -266,24 +280,24 @@ func guildMemberUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 }
 
 func messageCreateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageCreate) {
-	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		if m.Author.Bot {
+	return func(s *discordgo.Session, d *discordgo.MessageCreate) {
+		if d.Author.Bot {
 			return
 		}
 
 		// max size 10mb
-		_ = b.store.SetMessage(NewDiscordMessage(m.Message, 1024*1024*10))
+		_ = b.store.SetMessage(NewDiscordMessage(d.Message, 1024*1024*10))
 	}
 }
 
 func messageDeleteHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDelete) {
-	return func(s *discordgo.Session, m *discordgo.MessageDelete) {
-		msg, err := b.store.GetMessage(m.GuildID, m.ChannelID, m.ID)
+	return func(s *discordgo.Session, d *discordgo.MessageDelete) {
+		msg, err := b.store.GetMessage(d.GuildID, d.ChannelID, d.ID)
 		if err != nil {
 			return
 		}
 
-		g, err := s.State.Guild(m.GuildID)
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			return
 		}
@@ -297,8 +311,8 @@ func messageDeleteHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDel
 		embed := builders.NewEmbedBuilder().
 			WithTitle("Message Deleted").
 			AddField("User", fmt.Sprintf("%v\n%v\n%v", msg.Message.Author.Mention(), msg.Message.Author.String(), msg.Message.Author.ID), true).
-			AddField("Message ID", m.ID, true).
-			AddField("Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false).
+			AddField("Message ID", d.ID, true).
+			AddField("Channel", fmt.Sprintf("<#%v> (%v)", d.ChannelID, d.ChannelID), false).
 			WithDescription("No content").
 			WithColor(int(ColorWhite))
 		reply := builders.NewMessageSendBuilder()
@@ -331,8 +345,8 @@ func messageDeleteHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDel
 }
 
 func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDeleteBulk) {
-	return func(s *discordgo.Session, m *discordgo.MessageDeleteBulk) {
-		g, err := b.Bot.Discord.Guild(m.GuildID)
+	return func(s *discordgo.Session, d *discordgo.MessageDeleteBulk) {
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			return
 		}
@@ -344,13 +358,13 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 		}
 
 		embed := builders.NewEmbedBuilder().
-			WithTitle(fmt.Sprintf("Bulk Message Delete - (%v) messages", len(m.Messages))).
-			AddField("Channel", fmt.Sprintf("<#%v>", m.ChannelID), true).
+			WithTitle(fmt.Sprintf("Bulk Message Delete - (%v) messages", len(d.Messages))).
+			AddField("Channel", fmt.Sprintf("<#%v>", d.ChannelID), true).
 			WithColor(int(ColorWhite))
 
 		var messages []*DiscordMessage
-		for _, msgID := range m.Messages {
-			msg, err := b.store.GetMessage(m.GuildID, m.ChannelID, msgID)
+		for _, msgID := range d.Messages {
+			msg, err := b.store.GetMessage(d.GuildID, d.ChannelID, msgID)
 			if err != nil {
 				continue
 			}
@@ -362,7 +376,6 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 		})
 
 		builder := strings.Builder{}
-		builder.WriteString(fmt.Sprintf("%v - %v\n\n\n", m.ChannelID, time.Now().Format(time.RFC3339)))
 		for _, msg := range messages {
 			text := fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
 			if len(msg.Attachments) > 0 {
@@ -372,7 +385,7 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 		}
 
 		reply := builders.NewMessageSendBuilder().
-			AddTextFile(fmt.Sprintf("deleted_%v_%v.txt", m.ChannelID, time.Now().Unix()), builder.String()).
+			AddTextFile(fmt.Sprintf("deleted_%v_%v.txt", d.ChannelID, time.Now().Unix()), builder.String()).
 			Embed(embed.Build())
 
 		_, _ = s.ChannelMessageSendComplex(gc.MsgDeleteLog, reply.Build())
