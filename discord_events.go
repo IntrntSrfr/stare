@@ -31,8 +31,8 @@ func disconnectHandler(b *Bot) func(*discordgo.Session, *discordgo.Disconnect) {
 }
 
 func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd) {
-	return func(s *discordgo.Session, m *discordgo.GuildBanAdd) {
-		g, err := b.Bot.Discord.Guild(m.GuildID)
+	return func(s *discordgo.Session, d *discordgo.GuildBanAdd) {
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			b.logger.Error("failed to fetch guild", zap.Error(err))
 			return
@@ -46,12 +46,12 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 
 		embed := builders.NewEmbedBuilder().
 			WithTitle("User Banned").
-			WithThumbnail(m.User.AvatarURL("256")).
-			AddField("User", fmt.Sprintf("%v\n%v", m.User.Mention(), m.User.String()), false).
-			AddField("ID", m.User.ID, false).
+			WithThumbnail(d.User.AvatarURL("256")).
+			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
+			WithFooter(fmt.Sprintf("User ID: %v", d.User.ID), "").
 			WithColor(int(ColorRed))
 
-		if _, err = b.store.GetMember(m.GuildID, m.User.ID); err != nil {
+		if _, err = b.store.GetMember(d.GuildID, d.User.ID); err != nil {
 			if err != badger.ErrKeyNotFound {
 				b.logger.Error("failed to get member", zap.Error(err))
 			}
@@ -59,7 +59,7 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 		}
 
 		// fetch their messages and attachments
-		messages, err := b.store.GetMessageLog(m.GuildID, m.User.ID)
+		messages, err := b.store.GetMessageLog(d.GuildID, d.User.ID)
 		if err != nil {
 			b.logger.Error("failed to get message log", zap.Error(err))
 		}
@@ -86,7 +86,7 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 		}
 
 		reply := builders.NewMessageSendBuilder().
-			AddTextFile(fmt.Sprintf("24h_ban_log_%v_%v.txt", m.User.ID, time.Now().Unix()), builder.String()).
+			AddTextFile(fmt.Sprintf("24h_ban_log_%v_%v.txt", d.User.ID, time.Now().Unix()), builder.String()).
 			Embed(embed.Build())
 		_, _ = s.ChannelMessageSendComplex(gc.BanLog, reply.Build())
 	}
@@ -109,7 +109,7 @@ func guildBanRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanR
 			WithTitle("User Unbanned").
 			WithThumbnail(d.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
-			AddField("ID", d.User.ID, false).
+			WithFooter(fmt.Sprintf("User ID: %v", d.User.ID), "").
 			WithColor(int(ColorGreen))
 		_, _ = s.ChannelMessageSendEmbed(gc.UnbanLog, embed.Build())
 	}
@@ -162,8 +162,8 @@ func guildMemberAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildMemb
 			WithTitle("User Joined").
 			WithThumbnail(d.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
-			AddField("ID", d.User.ID, false).
 			AddField("Creation date", fmt.Sprintf("<t:%v:R>", ts.Unix()), false).
+			WithFooter(fmt.Sprintf("User ID: %v", d.User.ID), "").
 			WithColor(int(ColorBlue))
 		_, _ = s.ChannelMessageSendEmbed(gc.JoinLog, embed.Build())
 	}
@@ -191,7 +191,7 @@ func guildMemberRemoveHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildM
 			WithTitle("User Left or Kicked").
 			WithThumbnail(d.User.AvatarURL("256")).
 			AddField("User", fmt.Sprintf("%v\n%v", d.User.Mention(), d.User.String()), false).
-			AddField("ID", d.User.ID, false).
+			WithFooter(fmt.Sprintf("User ID: %v", d.User.ID), "").
 			WithColor(int(ColorOrange))
 
 		var roles []string
@@ -279,19 +279,19 @@ func messageDeleteHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageDel
 		embed := builders.NewEmbedBuilder().
 			WithTitle("Message Deleted").
 			AddField("User", fmt.Sprintf("%v\n%v\n%v", msg.Message.Author.Mention(), msg.Message.Author.String(), msg.Message.Author.ID), true).
-			AddField("Message ID", d.ID, true).
 			AddField("Channel", fmt.Sprintf("<#%v> (%v)", d.ChannelID, d.ChannelID), false).
-			WithDescription("No content").
+			WithFooter(fmt.Sprintf("Message ID: %v", d.ID), "").
 			WithColor(int(ColorWhite))
 		reply := builders.NewMessageSendBuilder()
 
+		descStr := "No content"
 		if msg.Message.Content != "" {
-			str := msg.Message.Content
-			if len(str) > 1024 {
-				str = "Content too long, so it's put in the attached .txt file"
+			descStr = msg.Message.Content
+			if len(descStr) > 1024 {
+				descStr = "Content too long, so it's put in the attached .txt file"
 				reply.AddTextFile("deleted_content.txt", msg.Message.Content)
 			}
-			embed.WithDescription(str)
+			embed.WithDescription(descStr)
 		}
 
 		if len(msg.Attachments) > 0 {
@@ -361,13 +361,13 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 }
 
 func messageUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageUpdate) {
-	return func(s *discordgo.Session, m *discordgo.MessageUpdate) {
+	return func(s *discordgo.Session, d *discordgo.MessageUpdate) {
 		// This means it was an image update and not an actual edit
-		if m.Message.Content == "" || m.Author.Bot {
+		if d.Message.Content == "" || d.Author.Bot {
 			return
 		}
 
-		g, err := b.Bot.Discord.Guild(m.GuildID)
+		g, err := b.Bot.Discord.Guild(d.GuildID)
 		if err != nil {
 			b.logger.Info("error", zap.Error(err))
 			return
@@ -379,20 +379,20 @@ func messageUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageUpd
 			return
 		}
 
-		oldMsg, err := b.store.GetMessage(m.GuildID, m.ChannelID, m.ID)
+		oldMsg, err := b.store.GetMessage(d.GuildID, d.ChannelID, d.ID)
 		if err != nil || (oldMsg.Message.Author != nil && oldMsg.Message.Author.Bot) {
 			return
 		}
 
-		if oldMsg.Message.Content == m.Content {
+		if oldMsg.Message.Content == d.Content {
 			return
 		}
 
 		embed := builders.NewEmbedBuilder().
 			WithTitle("Message Edited").
-			AddField("User", fmt.Sprintf("%v\n%v\n%v", m.Author.Mention(), m.Author.String(), m.Author.ID), true).
-			AddField("Message ID", m.ID, true).
-			AddField("Channel", fmt.Sprintf("<#%v> (%v)", m.ChannelID, m.ChannelID), false).
+			AddField("User", fmt.Sprintf("%v\n%v\n%v", d.Author.Mention(), d.Author.String(), d.Author.ID), true).
+			AddField("Channel", fmt.Sprintf("<#%v> (%v)", d.ChannelID, d.ChannelID), false).
+			WithFooter(fmt.Sprintf("Message ID: %v", d.ID), "").
 			WithColor(int(ColorBlue))
 
 		reply := builders.NewMessageSendBuilder()
@@ -406,18 +406,18 @@ func messageUpdateHandler(b *Bot) func(*discordgo.Session, *discordgo.MessageUpd
 		}
 
 		// check new content
-		if len(m.Content) > 1024 {
+		if len(d.Content) > 1024 {
 			embed.AddField("New content", "Content too long, so it's put in the attached .txt file", false)
-			reply.AddTextFile("new_content.txt", m.Content)
+			reply.AddTextFile("new_content.txt", d.Content)
 		} else {
-			embed.AddField("New content", m.Content, false)
+			embed.AddField("New content", d.Content, false)
 		}
 
 		reply.Embed(embed.Build())
 		_, _ = s.ChannelMessageSendComplex(gc.MsgEditLog, reply.Build())
 
 		// I think this should be put in its own function and not at the end of this one lol
-		oldMsg.Message.Content = m.Content
+		oldMsg.Message.Content = d.Content
 		err = b.store.SetMessage(oldMsg)
 		if err != nil {
 			b.logger.Error("failed to update message", zap.Error(err))
