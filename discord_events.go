@@ -81,8 +81,7 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 		}
 
 		if len(messages) > 0 {
-			embed.WithDescription(embed.Description + "\n24 hour message log is attached")
-			embed.AddField("Total messages", fmt.Sprint(len(messages)), false)
+			embed.AddField("24 hour message log", fmt.Sprintf("Log is attached\nMessages: %v", len(messages)), false)
 		}
 
 		reply := builders.NewMessageSendBuilder().
