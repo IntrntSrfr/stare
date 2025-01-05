@@ -344,7 +344,8 @@ func messageDeleteBulkHandler(b *Bot) func(*discordgo.Session, *discordgo.Messag
 
 		builder := strings.Builder{}
 		for _, msg := range messages {
-			text := fmt.Sprintf("\nUser: %v (%v)\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, msg.Message.Content)
+			ts := utils.IDToTimestamp(msg.Message.ID).Format(time.DateTime)
+			text := fmt.Sprintf("\nUser: %v (%v)\nTimestamp: %v\nContent: %v\n", msg.Message.Author.String(), msg.Message.Author.ID, ts, msg.Message.Content)
 			if len(msg.Attachments) > 0 {
 				text += "Message had attachment\n"
 			}
