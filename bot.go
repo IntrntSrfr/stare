@@ -4,12 +4,11 @@ import (
 	"context"
 
 	"github.com/intrntsrfr/meido/pkg/mio"
-	"github.com/intrntsrfr/meido/pkg/mio/bot"
 	"github.com/intrntsrfr/meido/pkg/utils"
 )
 
 type Bot struct {
-	Bot    *bot.Bot
+	Bot    *mio.Bot
 	logger mio.Logger
 	config *utils.Config
 	db     DB
@@ -19,7 +18,7 @@ type Bot struct {
 func NewBot(config *utils.Config, db DB) *Bot {
 	logger := newLogger("bot")
 
-	b := bot.NewBotBuilder(config).
+	b := mio.NewBotBuilder(config).
 		WithDefaultHandlers().
 		WithLogger(logger).
 		Build()
@@ -50,7 +49,7 @@ func (b *Bot) Close() {
 }
 
 func (b *Bot) registerModules() {
-	modules := []bot.Module{
+	modules := []mio.Module{
 		NewModule(b.Bot, b.db, b.logger),
 	}
 	for _, mod := range modules {

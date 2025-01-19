@@ -7,7 +7,7 @@ toolchain go1.22.5
 require (
 	github.com/bwmarrin/discordgo v0.28.1
 	github.com/dgraph-io/badger v1.6.2
-	github.com/intrntsrfr/meido v0.0.0-20241230061356-a523f533b93d
+	github.com/intrntsrfr/meido v0.0.0-20250107131615-0c17bb098e6f
 	github.com/jmoiron/sqlx v1.3.5
 	go.uber.org/zap v1.26.0
 )

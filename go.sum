@@ -46,6 +46,8 @@ github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
 github.com/intrntsrfr/meido v0.0.0-20241230061356-a523f533b93d h1:5Tvb91IwGGV8QKajltQKRBW34+SiA+2suQNa+MCdSH8=
 github.com/intrntsrfr/meido v0.0.0-20241230061356-a523f533b93d/go.mod h1:8LnbQgsnrondrzLgNVzP2TcwJDTZcgnBTWDBw1TR43c=
+github.com/intrntsrfr/meido v0.0.0-20250107131615-0c17bb098e6f h1:wH7tJ0DcMtyOhHNADv1U/KRx2v8xwHsIi5X/wRr4z/k=
+github.com/intrntsrfr/meido v0.0.0-20250107131615-0c17bb098e6f/go.mod h1:8LnbQgsnrondrzLgNVzP2TcwJDTZcgnBTWDBw1TR43c=
 github.com/jmoiron/sqlx v1.3.5 h1:vFFPA71p1o5gAeqtEAwLU4dnX2napprKtHr7PYIcN3g=
 github.com/jmoiron/sqlx v1.3.5/go.mod h1:nRVWtLre0KfCLJvgxzCsLVMogSvQ1zNJtpYr2Ccp0mQ=
 github.com/kr/pretty v0.2.0/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=

@@ -8,21 +8,19 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/intrntsrfr/meido/pkg/mio"
-	"github.com/intrntsrfr/meido/pkg/mio/bot"
-	"github.com/intrntsrfr/meido/pkg/mio/discord"
 	"github.com/intrntsrfr/meido/pkg/utils/builders"
 )
 
 type module struct {
-	*bot.ModuleBase
+	*mio.ModuleBase
 	startTime time.Time
 	db        DB
 }
 
-func NewModule(b *bot.Bot, db DB, logger mio.Logger) *module {
+func NewModule(b *mio.Bot, db DB, logger mio.Logger) *module {
 	logger = logger.Named("commands")
 	return &module{
-		ModuleBase: bot.NewModule(b, "commands", logger),
+		ModuleBase: mio.NewModule(b, "commands", logger),
 		db:         db,
 		startTime:  time.Now(),
 	}
@@ -43,12 +41,12 @@ func (m *module) Hook() error {
 	return nil
 }
 
-func newHelpSlash(m *module) *bot.ModuleApplicationCommand {
-	cmd := bot.NewModuleApplicationCommandBuilder(m, "help").
+func newHelpSlash(m *module) *mio.ModuleApplicationCommand {
+	cmd := mio.NewModuleApplicationCommandBuilder(m, "help").
 		Type(discordgo.ChatApplicationCommand).
 		Description("Get help on how to use the bot")
 
-	run := func(d *discord.DiscordApplicationCommand) {
+	run := func(d *mio.DiscordApplicationCommand) {
 		text := strings.Builder{}
 		text.WriteString("What gets logged:\n")
 		text.WriteString("1. When a user joins the server\n")
@@ -73,12 +71,12 @@ func newHelpSlash(m *module) *bot.ModuleApplicationCommand {
 	return cmd.Execute(run).Build()
 }
 
-func newInfoSlash(m *module) *bot.ModuleApplicationCommand {
-	cmd := bot.NewModuleApplicationCommandBuilder(m, "info").
+func newInfoSlash(m *module) *mio.ModuleApplicationCommand {
+	cmd := mio.NewModuleApplicationCommandBuilder(m, "info").
 		Type(discordgo.ChatApplicationCommand).
 		Description("Get information about the bot")
 
-	run := func(d *discord.DiscordApplicationCommand) {
+	run := func(d *mio.DiscordApplicationCommand) {
 		embed := builders.NewEmbedBuilder().
 			WithTitle("Info").
 			WithOkColor().
@@ -91,7 +89,7 @@ func newInfoSlash(m *module) *bot.ModuleApplicationCommand {
 	return cmd.Execute(run).Build()
 }
 
-func newSettingsSlash(m *module) *bot.ModuleApplicationCommand {
+func newSettingsSlash(m *module) *mio.ModuleApplicationCommand {
 	logTypes := map[string]string{
 		"join":      "User Join",
 		"leave":     "User Leave",
@@ -109,7 +107,7 @@ func newSettingsSlash(m *module) *bot.ModuleApplicationCommand {
 		})
 	}
 
-	cmd := bot.NewModuleApplicationCommandBuilder(m, "settings").
+	cmd := mio.NewModuleApplicationCommandBuilder(m, "settings").
 		Type(discordgo.ChatApplicationCommand).
 		Description("View or set the current settings").
 		NoDM().
@@ -140,7 +138,7 @@ func newSettingsSlash(m *module) *bot.ModuleApplicationCommand {
 			},
 		})
 
-	run := func(d *discord.DiscordApplicationCommand) {
+	run := func(d *mio.DiscordApplicationCommand) {
 		gc, err := m.db.GetGuild(d.GuildID())
 		if err != nil {
 			d.Respond("Failed to get guild config")
