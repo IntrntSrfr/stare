@@ -80,13 +80,13 @@ func guildBanAddHandler(b *Bot) func(*discordgo.Session, *discordgo.GuildBanAdd)
 			builder.WriteString(text)
 		}
 
+		reply := builders.NewMessageSendBuilder()
 		if len(messages) > 0 {
 			embed.AddField("24 hour message log", fmt.Sprintf("Log is attached\nMessages: %v", len(messages)), false)
+			reply.AddTextFile(fmt.Sprintf("24h_ban_log_%v_%v.txt", d.User.ID, time.Now().Unix()), builder.String())
 		}
 
-		reply := builders.NewMessageSendBuilder().
-			AddTextFile(fmt.Sprintf("24h_ban_log_%v_%v.txt", d.User.ID, time.Now().Unix()), builder.String()).
-			Embed(embed.Build())
+		reply.Embed(embed.Build())
 		_, _ = s.ChannelMessageSendComplex(gc.BanLog, reply.Build())
 	}
 }
